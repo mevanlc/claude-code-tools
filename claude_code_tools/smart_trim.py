@@ -248,6 +248,11 @@ def main():
         type=str,
         help="Path to Claude home directory (default: ~/.claude)"
     )
+    parser.add_argument(
+        "--instructions",
+        type=str,
+        help="Custom trimming instructions for the LLM (default: trim messages not relevant to last task)"
+    )
 
     args = parser.parse_args()
 
@@ -289,9 +294,11 @@ def main():
     cli_type = "codex" if agent == "codex" else "claude"
 
     print(f"🔍 Analyzing session: {session_file.name}")
-    print(f"   Excluding types: {', '.join(exclude_types)}")
+    print(f"   Excluding types: {', '.join(exclude_types) or '(none)'}")
     print(f"   Preserving recent: {args.preserve_recent} messages")
     print(f"   Using CLI: {cli_type}")
+    if args.instructions:
+        print(f"   Instructions: {args.instructions}")
     print()
 
     # Identify trimmable lines using CLI
@@ -301,6 +308,7 @@ def main():
             exclude_types=exclude_types,
             preserve_recent=args.preserve_recent,
             content_threshold=args.content_threshold,
+            custom_instructions=args.instructions,
             cli_type=cli_type,
         )
     except Exception as e:
