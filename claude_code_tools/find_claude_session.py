@@ -21,8 +21,7 @@ import re
 import shlex
 import sys
 import time
-import termios
-import tty
+import click
 from datetime import datetime
 from pathlib import Path
 from typing import List, Set, Tuple, Optional
@@ -74,14 +73,12 @@ def get_session_start_timestamp(jsonl_file: Path) -> Optional[float]:
 
 def _read_key() -> str:
     """Read a single keypress (Enter/Esc)."""
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
     try:
-        tty.setcbreak(fd)
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
-    return ch
+        ch = click.getchar()
+    except (KeyboardInterrupt, EOFError):
+        return "\n"
+    # Normalize Windows Enter key (\r) to \n so callers can treat it as "Enter".
+    return "\n" if ch == "\r" else ch
 
 
 def prompt_post_action() -> str:
