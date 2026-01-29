@@ -974,6 +974,16 @@ Use the `/voice:speak` command to configure:
 See the [pocket-tts repo](https://github.com/kyutai-labs/pocket-tts) for the
 latest available voices.
 
+### Recommended: Speech-to-Text Companion
+
+For a complete voice workflow, pair this TTS plugin with
+[Handy](https://github.com/cjpais/Handy) (open-source) using the **Parakeet V3**
+model for speech-to-text. It's stunningly fast with near-instant transcription.
+
+The slight accuracy drop compared to larger models is immaterial when talking to
+an AI. **Pro tip**: Ask the agent to restate what it understood — this confirms
+understanding and helps keep the CLI agent on track.
+
 ### Architecture
 
 The plugin uses two hooks working together:
