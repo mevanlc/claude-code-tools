@@ -986,18 +986,21 @@ understanding and helps keep the CLI agent on track.
 
 ### Architecture
 
-The plugin uses two hooks working together:
+The plugin uses a multi-hook strategy for fast, reliable voice summaries:
 
-- **Stop hook**: Blocks the agent from stopping until voice feedback is
-  provided
-- **PostToolUse hook**: Tracks when the `say` script is called and creates
-  session-specific flags to prevent double-voice
+- **UserPromptSubmit hook**: Silently injects voice instructions each turn,
+  telling Claude to end longer responses with a `📢` spoken summary marker
+- **PostToolUse hook**: Brief reminder after each tool call to keep instructions
+  fresh during long tool chains
+- **Stop hook**: Extracts the `📢` marker instantly (no API call), or falls back
+  to headless Claude summarization only if the agent forgot
 
 This ensures:
 
-- Normal Q&A gets voice feedback when the agent stops
-- Explicit "use your voice" requests don't trigger double feedback
-- Multiple concurrent sessions don't interfere with each other
+- **Fast feedback**: Most summaries are instant (marker extraction, no API call)
+- **Reliable**: Headless Claude fallback catches cases where agent forgets
+- **Silent operation**: Hooks use `additionalContext` for noise-free injection
+- **Tone matching**: Summaries match user's style (casual, colorful, etc.)
 
 <a id="using-claude-code-with-open-weight-anthropic-api-compatible-llm-providers"></a>
 ## 🤖 Using Claude Code with Open-weight Anthropic API-compatible LLM Providers
