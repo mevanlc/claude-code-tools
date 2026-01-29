@@ -165,11 +165,11 @@ def extract_message_text(data: dict) -> str | None:
     return None
 
 
-def get_last_assistant_message(session_file: Path) -> str | None:
-    """Get the last assistant message text from session file.
+def _read_last_assistant_text(session_file: Path) -> str | None:
+    """Read the last assistant message text from session file (single pass).
 
-    Important: Always resets on each assistant entry to avoid returning stale
-    text from a previous message when the current one only has thinking content.
+    Always resets on each assistant entry to avoid returning stale text from a
+    previous message when the current one only has thinking content.
     """
     last_assistant_text = None
 
@@ -193,6 +193,29 @@ def get_last_assistant_message(session_file: Path) -> str | None:
         pass
 
     return last_assistant_text
+
+
+def get_last_assistant_message(
+    session_file: Path,
+    max_retries: int = 3,
+    retry_delay: float = 0.15,
+) -> str | None:
+    """Get the last assistant message text, with retry for race conditions.
+
+    Claude streams responses with thinking first, then text. If the stop hook
+    fires between these writes, we may only see the thinking entry. This retries
+    briefly to wait for the text entry to be written.
+    """
+    import time
+
+    for attempt in range(max_retries):
+        text = _read_last_assistant_text(session_file)
+        if text:
+            return text
+        if attempt < max_retries - 1:
+            time.sleep(retry_delay)
+
+    return None
 
 
 def get_recent_conversation(

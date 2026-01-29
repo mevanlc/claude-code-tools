@@ -8,7 +8,8 @@
   entries are written to the session file before text entries. If the stop hook
   fired between these writes, it would return the previous message's text
   instead of the current one, causing wrong audio to play. Now resets on every
-  assistant entry so incomplete entries return `None` rather than stale content.
+  assistant entry and retries up to 3 times (150ms delay) if only a thinking
+  entry is found, giving time for the text entry to be written.
 
 ## [1.9.2] - 2026-01-29
 
