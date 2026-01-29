@@ -166,7 +166,11 @@ def extract_message_text(data: dict) -> str | None:
 
 
 def get_last_assistant_message(session_file: Path) -> str | None:
-    """Get the last assistant message text from session file."""
+    """Get the last assistant message text from session file.
+
+    Important: Always resets on each assistant entry to avoid returning stale
+    text from a previous message when the current one only has thinking content.
+    """
     last_assistant_text = None
 
     try:
@@ -180,8 +184,9 @@ def get_last_assistant_message(session_file: Path) -> str | None:
                     data = json.loads(line)
                     if data.get("type") == "assistant":
                         text = extract_message_text(data)
-                        if text:
-                            last_assistant_text = text
+                        # Always reset - if current entry has no text (e.g., only
+                        # thinking), we should NOT return stale text from earlier
+                        last_assistant_text = text if text else None
                 except json.JSONDecodeError:
                     continue
     except Exception:
