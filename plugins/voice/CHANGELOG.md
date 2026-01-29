@@ -15,6 +15,9 @@
   `voice_common.py`
 - **TTS benchmark script**: `scripts/benchmark_tts.py` for comparing KittenTTS
   vs pocket-tts performance
+- **just_disabled flag**: When voice is disabled via `/voice:speak stop`, a
+  one-time "do NOT add 📢 summaries" message is injected to counteract earlier
+  voice instructions still in context
 
 ### Changed
 - **Smarter summary extraction**: Extracts inline `📢` markers for instant
