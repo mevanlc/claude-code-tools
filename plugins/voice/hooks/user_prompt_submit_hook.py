@@ -14,7 +14,7 @@ from pathlib import Path
 # Add hooks directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
 
-from voice_common import get_voice_config, build_full_reminder
+from voice_common import get_voice_config, build_full_reminder, MAX_SPOKEN_WORDS
 
 
 def main():

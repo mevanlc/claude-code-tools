@@ -19,6 +19,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Add hooks directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from voice_common import MAX_SPOKEN_WORDS
+
 PLUGIN_ROOT = Path(__file__).parent.parent
 
 
@@ -134,7 +139,7 @@ def word_count(text: str) -> int:
     return len(text.split())
 
 
-def is_short_response(text: str, max_words: int = 25) -> bool:
+def is_short_response(text: str, max_words: int = MAX_SPOKEN_WORDS) -> bool:
     """Check if response is short enough to speak directly."""
     return word_count(text) <= max_words
 
@@ -310,10 +315,7 @@ YOUR LAST MESSAGE:
         if result.returncode == 0:
             data = json.loads(result.stdout)
             summary = data.get("result", "").strip()
-            # Hard limit: truncate to 25 words max
-            words = summary.split()
-            if len(words) > 25:
-                summary = " ".join(words[:25]) + "..."
+            # No truncation - headless Claude already generates a summary
             return summary
 
     except Exception:
@@ -373,15 +375,18 @@ def main():
     # Get last assistant message
     last_assistant_msg = get_last_assistant_message(session_file)
 
+    # Flexible limit for explicit summaries (1.5x the strict limit)
+    flexible_limit = int(MAX_SPOKEN_WORDS * 1.5)
+
     # Strategy 1: Try to extract 📢 marker (instant!)
     if last_assistant_msg:
         marker_summary = extract_voice_marker(last_assistant_msg)
         if marker_summary:
-            summary = marker_summary
+            summary = trim_to_words(marker_summary, flexible_limit)
 
-    # Strategy 2: If no marker but response is short (≤25 words), speak directly
+    # Strategy 2: If no marker but response is short, speak directly
     if not summary and last_assistant_msg:
-        if is_short_response(last_assistant_msg, max_words=25):
+        if is_short_response(last_assistant_msg, max_words=MAX_SPOKEN_WORDS):
             summary = last_assistant_msg  # Already short enough
 
     # Strategy 3: Fall back to headless Claude summarization (slower)
@@ -390,18 +395,19 @@ def main():
         if conversation:
             summary = summarize_with_claude(conversation, custom_prompt)
             if summary:
+                summary = trim_to_words(summary, flexible_limit)
                 used_headless = True
 
     # Strategy 4: Last resort - truncate last message
     if not summary and last_assistant_msg:
-        summary = trim_to_words(last_assistant_msg, 20)
+        summary = trim_to_words(last_assistant_msg, MAX_SPOKEN_WORDS)
 
     if not summary:
         print(json.dumps({"decision": "approve"}))
         return
 
-    # Final safety: always enforce 25-word max no matter which strategy
-    summary = trim_to_words(summary, 25)
+    # No final truncation - trust explicit summaries (marker or headless Claude)
+    # Only Strategy 2 and 4 use raw text which is already bounded by MAX_SPOKEN_WORDS
 
     # Speak it
     speak_summary(session_id, summary, voice)
