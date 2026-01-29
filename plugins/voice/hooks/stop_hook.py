@@ -27,11 +27,11 @@ from voice_common import MAX_SPOKEN_WORDS
 PLUGIN_ROOT = Path(__file__).parent.parent
 
 
-def get_voice_config() -> tuple[bool, str, str]:
+def get_voice_config() -> tuple[bool, str, str, bool]:
     """Read voice config from ~/.claude/voice.local.md
 
     Returns:
-        Tuple of (enabled, voice, custom_prompt)
+        Tuple of (enabled, voice, custom_prompt, just_disabled)
     """
     config_file = Path.home() / ".claude" / "voice.local.md"
 
@@ -45,13 +45,14 @@ enabled: true
 
 Use `/voice:speak stop` to disable, `/voice:speak <name>` to change voice.
 """)
-        return True, "azelma", ""
+        return True, "azelma", "", False
 
     content = config_file.read_text()
 
     enabled = True
     voice = "azelma"
     custom_prompt = ""
+    just_disabled = False
 
     lines = content.split("\n")
     in_frontmatter = False
@@ -76,8 +77,11 @@ Use `/voice:speak stop` to disable, `/voice:speak <name>` to change voice.
                    (val.startswith("'") and val.endswith("'")):
                     val = val[1:-1]
                 custom_prompt = val
+            elif line.startswith("just_disabled:"):
+                val = line.split(":", 1)[1].strip()
+                just_disabled = val.lower() == "true"
 
-    return enabled, voice, custom_prompt
+    return enabled, voice, custom_prompt, just_disabled
 
 
 def find_session_file(session_id: str) -> Path | None:
@@ -353,8 +357,8 @@ def main():
 
     session_id = data.get("session_id", "")
 
-    # Check if voice is enabled
-    enabled, voice, custom_prompt = get_voice_config()
+    # Check if voice is enabled (ignore just_disabled - only used by prompt hook)
+    enabled, voice, custom_prompt, _just_disabled = get_voice_config()
     if not enabled:
         print(json.dumps({"decision": "approve"}))
         return
