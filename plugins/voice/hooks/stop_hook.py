@@ -165,53 +165,71 @@ def extract_message_text(data: dict) -> str | None:
     return None
 
 
-def _read_last_assistant_text(session_file: Path) -> str | None:
-    """Read the last assistant message text from session file (single pass).
+def _read_session_messages(session_file: Path) -> tuple[int, int, str | None]:
+    """Read session file and extract message ordering info.
 
-    Always resets on each assistant entry to avoid returning stale text from a
-    previous message when the current one only has thinking content.
+    Returns:
+        Tuple of (last_user_line, last_assistant_text_line, last_assistant_text)
+        - last_user_line: Line number of the most recent user message
+        - last_assistant_text_line: Line number of the most recent assistant with text
+        - last_assistant_text: text content of that assistant message (if any)
     """
+    last_user_line = -1
+    last_assistant_text_line = -1
     last_assistant_text = None
 
     try:
         with open(session_file, "r", encoding="utf-8") as f:
-            for line in f:
+            for line_num, line in enumerate(f):
                 line = line.strip()
                 if not line:
                     continue
 
                 try:
                     data = json.loads(line)
-                    if data.get("type") == "assistant":
+                    msg_type = data.get("type")
+
+                    if msg_type == "user":
+                        last_user_line = line_num
+
+                    elif msg_type == "assistant":
                         text = extract_message_text(data)
-                        # Always reset - if current entry has no text (e.g., only
-                        # thinking), we should NOT return stale text from earlier
-                        last_assistant_text = text if text else None
+                        if text:
+                            last_assistant_text_line = line_num
+                            last_assistant_text = text
+
                 except json.JSONDecodeError:
                     continue
     except Exception:
         pass
 
-    return last_assistant_text
+    return last_user_line, last_assistant_text_line, last_assistant_text
 
 
 def get_last_assistant_message(
     session_file: Path,
-    max_retries: int = 3,
-    retry_delay: float = 0.15,
+    max_retries: int = 10,
+    retry_delay: float = 0.5,
 ) -> str | None:
     """Get the last assistant message text, with retry for race conditions.
 
-    Claude streams responses with thinking first, then text. If the stop hook
-    fires between these writes, we may only see the thinking entry. This retries
-    briefly to wait for the text entry to be written.
+    The stop hook can fire before the assistant message is written to the session
+    file. This checks if the last assistant message with text comes AFTER the
+    last user message (by line order). If not, it retries.
+
+    Default: 10 retries × 0.5s = 5 seconds total wait window.
     """
     import time
 
     for attempt in range(max_retries):
-        text = _read_last_assistant_text(session_file)
-        if text:
-            return text
+        last_user_line, last_asst_line, last_asst_text = _read_session_messages(
+            session_file
+        )
+
+        # Valid if: we have text AND the assistant line comes after the user line
+        if last_asst_text and last_asst_line > last_user_line >= 0:
+            return last_asst_text
+
         if attempt < max_retries - 1:
             time.sleep(retry_delay)
 
@@ -382,6 +400,14 @@ def main():
     except json.JSONDecodeError:
         print(json.dumps({"decision": "approve"}))
         return
+
+    # DEBUG: Log the full stop hook input to see what data is available
+    debug_file = Path("/tmp/voice-stop-hook-input.json")
+    try:
+        with open(debug_file, "w") as f:
+            json.dump(data, f, indent=2, default=str)
+    except Exception:
+        pass
 
     session_id = data.get("session_id", "")
 

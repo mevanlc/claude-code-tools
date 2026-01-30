@@ -1,15 +1,19 @@
 # Changelog
 
-## [1.9.3] - 2026-01-29
+## [1.9.3] - 2026-01-30
 
 ### Fixed
 
 - **Stale summary race condition**: When Claude streams responses, thinking
   entries are written to the session file before text entries. If the stop hook
   fired between these writes, it would return the previous message's text
-  instead of the current one, causing wrong audio to play. Now resets on every
-  assistant entry and retries up to 3 times (150ms delay) if only a thinking
-  entry is found, giving time for the text entry to be written.
+  instead of the current one, causing wrong audio to play.
+
+  The fix uses line-order verification: checks that the last assistant message
+  with text appears AFTER the last user message in the session file. Retries
+  up to 10 times (500ms delay each, 5s total) if the current response hasn't
+  been written yet. This handles both the thinking-before-text race and cases
+  where the entire assistant message is delayed.
 
 ## [1.9.2] - 2026-01-29
 
