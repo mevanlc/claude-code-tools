@@ -194,20 +194,55 @@ def extract_subcommands(command: str) -> list[str]:
     return [cmd.strip() for cmd in subcommands if cmd.strip()]
 
 
+def _extract_balanced_paren_content(command: str, start_idx: int) -> str | None:
+    """
+    Extract content from balanced parentheses starting at given index.
+
+    Given a string and the index of an opening '(', finds the matching
+    closing ')' accounting for nested parentheses.
+
+    Args:
+        command: The full command string.
+        start_idx: Index of the opening '(' character.
+
+    Returns:
+        The content between the balanced parentheses (excluding the parens
+        themselves), or None if no balanced closing paren is found.
+
+    Example:
+        >>> _extract_balanced_paren_content("$(echo $(rm foo))", 1)
+        'echo $(rm foo)'
+    """
+    if start_idx >= len(command) or command[start_idx] != '(':
+        return None
+
+    depth = 0
+    for i in range(start_idx, len(command)):
+        if command[i] == '(':
+            depth += 1
+        elif command[i] == ')':
+            depth -= 1
+            if depth == 0:
+                # Found the matching closing paren
+                return command[start_idx + 1:i]
+
+    # No matching closing paren found
+    return None
+
+
 def extract_subshell_commands(command: str) -> list[str]:
     """
     Extract commands embedded in subshells from a bash command string.
 
     Detects and extracts commands from:
-        - $(...) command substitution (modern syntax)
+        - $(...) command substitution (modern syntax, handles nesting)
         - `...` backtick command substitution (legacy syntax)
 
     This is a security measure to detect dangerous commands hidden inside
     subshells, e.g., `echo $(rm -rf /)` or `echo \`rm foo\``.
 
-    Note: This performs a shallow extraction and does not handle deeply
-    nested subshells. For security purposes, the extracted commands should
-    be recursively checked.
+    Uses balanced parenthesis scanning to correctly handle nested $()
+    subshells like `$(echo $(rm foo))`.
 
     Args:
         command: A bash command string that may contain subshells.
@@ -223,6 +258,8 @@ def extract_subshell_commands(command: str) -> list[str]:
         ['rm foo']
         >>> extract_subshell_commands("$(cat file) | $(rm -rf /)")
         ['cat file', 'rm -rf /']
+        >>> extract_subshell_commands("echo $(echo $(rm foo))")
+        ['echo $(rm foo)']
     """
     if not command:
         return []
@@ -230,13 +267,21 @@ def extract_subshell_commands(command: str) -> list[str]:
     subshell_commands = []
 
     # Extract from $(...) - modern command substitution
-    # This pattern handles nested parentheses by matching balanced pairs
-    # For simplicity, we use a non-greedy match which works for non-nested cases
-    dollar_paren_pattern = r'\$\(([^)]+)\)'
-    for match in re.finditer(dollar_paren_pattern, command):
-        inner_cmd = match.group(1).strip()
-        if inner_cmd:
-            subshell_commands.append(inner_cmd)
+    # Use balanced parenthesis scanning to handle nested subshells
+    i = 0
+    while i < len(command) - 1:
+        if command[i:i+2] == '$(':
+            # Found start of $(), extract balanced content
+            inner_cmd = _extract_balanced_paren_content(command, i + 1)
+            if inner_cmd is not None:
+                inner_cmd = inner_cmd.strip()
+                if inner_cmd:
+                    subshell_commands.append(inner_cmd)
+                # Skip past this subshell to avoid re-matching nested ones
+                # at the top level (they'll be found via recursion)
+                i += 2 + len(inner_cmd) + 1  # $( + content + )
+                continue
+        i += 1
 
     # Extract from `...` - backtick command substitution (legacy syntax)
     # Backticks cannot be nested, so a simple pattern works

@@ -143,6 +143,16 @@ class TestCheckRmCommand(unittest.TestCase):
         blocked, _ = check_rm_command("$(rm x) & echo done")
         self.assertTrue(blocked, "rm in subshell with & should be blocked")
 
+    def test_nested_subshell_bypass_blocked(self):
+        """rm hidden in nested $() subshells is blocked - P1 security fix."""
+        # This was a bypass: the regex stopped at first ), missing inner rm
+        blocked, _ = check_rm_command("echo $(echo $(rm foo))")
+        self.assertTrue(blocked, "rm in nested subshell should be blocked")
+
+        # Deeper nesting
+        blocked, _ = check_rm_command("$(cat $(ls $(rm secret)))")
+        self.assertTrue(blocked, "rm in deeply nested subshell should be blocked")
+
     def test_reason_message_content(self):
         """Blocked commands include helpful guidance in reason."""
         blocked, reason = check_rm_command("rm foo")

@@ -128,6 +128,24 @@ class TestExtractSubshellCommands(unittest.TestCase):
         result = extract_subshell_commands("cat `rm foo`")
         self.assertEqual(result, ["rm foo"])
 
+    def test_nested_subshell_extraction(self):
+        """Nested $() subshells are properly extracted - P1 security fix."""
+        # This was a bypass: $(echo $(rm foo)) would only extract "echo $(rm foo"
+        # truncated at first ), missing the inner rm command
+        result = extract_subshell_commands("echo $(echo $(rm foo))")
+        self.assertEqual(result, ["echo $(rm foo)"])
+
+    def test_deeply_nested_subshells(self):
+        """Multiple levels of nesting are handled."""
+        result = extract_subshell_commands("$(a $(b $(c)))")
+        self.assertEqual(result, ["a $(b $(c))"])
+
+    def test_multiple_nested_subshells(self):
+        """Multiple nested subshells at same level."""
+        result = extract_subshell_commands("$(cmd1 $(inner1)) $(cmd2 $(inner2))")
+        self.assertIn("cmd1 $(inner1)", result)
+        self.assertIn("cmd2 $(inner2)", result)
+
 
 class TestExtractAllCommands(unittest.TestCase):
     """Tests for extract_all_commands() comprehensive extraction."""
