@@ -9,7 +9,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, TimeZone, Utc};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -25,7 +25,7 @@ use serde::Serialize;
 use std::io::{self, stdout};
 use std::time::{Duration, Instant};
 use std::process::Command;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use tantivy::{
     collector::TopDocs,
     query::{AllQuery, BooleanQuery, BoostQuery, Occur, PhraseQuery, QueryParser, TermQuery},
@@ -33,6 +33,8 @@ use tantivy::{
     snippet::SnippetGenerator,
     Index, ReloadPolicy, Term,
 };
+use tui_input::backend::crossterm::EventHandler;
+use tui_input::Input;
 
 // ============================================================================
 // Theme
@@ -148,9 +150,10 @@ impl Session {
         }
     }
 
-    fn time_ago(&self) -> String {
-        format_time_ago(&self.modified)
-    }
+    // unused - upstream may use this
+    // fn time_ago(&self) -> String {
+    //     format_time_ago(&self.modified)
+    // }
 
     /// Extract the clean UUID from session_id
     /// For Claude: session_id is already the UUID
@@ -330,12 +333,13 @@ enum ProcessState {
 struct App {
     sessions: Vec<Session>,
     filtered: Vec<usize>, // Indices into sessions
-    query: String,
+    query: Input,  // tui-input widget with readline support
     selected: usize,
     list_scroll: usize,
     preview_scroll: usize,
     should_quit: bool,
     should_select: Option<Session>,
+    #[allow(dead_code)] // unused - keeping for upstream compatibility
     total_sessions: usize,
     scope_global: bool,
     launch_cwd: String,
@@ -398,6 +402,7 @@ struct App {
 
     // Branch filter (Ctrl+B) - only effective when not in global mode
     filter_branch: Option<String>,
+    #[allow(dead_code)] // unused - keeping for upstream compatibility
     launch_branch: String, // Current git branch at launch (for default value)
 
     // Result limit
@@ -428,6 +433,13 @@ struct App {
     cached_max_project_len: usize,
     cached_max_branch_len: usize,
     cached_max_lines_len: usize,
+
+    // Preview panel conversation cache
+    preview_content: String,              // Parsed conversation content for preview
+    preview_session_id: Option<String>,   // Session ID currently loaded in preview
+    preview_area: Option<Rect>,           // Area of preview panel for mouse detection
+    list_area: Option<Rect>,              // Area of session list for mouse detection
+    full_view_area: Option<Rect>,         // Area of full view panel for mouse detection
 }
 
 #[derive(Clone, PartialEq)]
@@ -602,17 +614,18 @@ impl ActionMenuItem {
         }
     }
 
-    /// Returns true if this action launches a new session (no pop-back)
-    fn is_launch_action(&self) -> bool {
-        matches!(
-            self,
-            ActionMenuItem::Resume
-                | ActionMenuItem::Clone
-                | ActionMenuItem::Trim
-                | ActionMenuItem::SmartTrim
-                | ActionMenuItem::Continue
-        )
-    }
+    // unused - upstream may use this
+    // /// Returns true if this action launches a new session (no pop-back)
+    // fn is_launch_action(&self) -> bool {
+    //     matches!(
+    //         self,
+    //         ActionMenuItem::Resume
+    //             | ActionMenuItem::Clone
+    //             | ActionMenuItem::Trim
+    //             | ActionMenuItem::SmartTrim
+    //             | ActionMenuItem::Continue
+    //     )
+    // }
 }
 
 /// Get the current git branch name, or empty string if not in a git repo
@@ -634,6 +647,8 @@ fn get_current_git_branch() -> String {
 }
 
 impl App {
+    // unused - only new_with_options is used, but keeping for upstream compatibility
+    #[allow(dead_code)]
     fn new(sessions: Vec<Session>, index_path: String, filter_claude_home: Option<String>, filter_codex_home: Option<String>) -> Self {
         let total = sessions.len();
         let launch_cwd = std::env::current_dir()
@@ -644,7 +659,7 @@ impl App {
         let mut app = Self {
             sessions,
             filtered: Vec::new(),
-            query: String::new(),
+            query: Input::default(),
             selected: 0,
             list_scroll: 0,
             preview_scroll: 0,
@@ -724,6 +739,12 @@ impl App {
             cached_max_project_len: 10,
             cached_max_branch_len: 8,
             cached_max_lines_len: 4,
+            // Preview panel conversation cache
+            preview_content: String::new(),
+            preview_session_id: None,
+            preview_area: None,
+            list_area: None,
+            full_view_area: None,
         };
         app.filter();
         app
@@ -750,7 +771,7 @@ impl App {
         let mut app = Self {
             sessions,
             filtered: Vec::new(),
-            query: cli.query.clone().unwrap_or_default(),
+            query: Input::from(cli.query.clone().unwrap_or_default()),
             selected: 0,
             list_scroll: 0,
             preview_scroll: 0,
@@ -834,6 +855,12 @@ impl App {
             cached_max_project_len: 10,
             cached_max_branch_len: 8,
             cached_max_lines_len: 4,
+            // Preview panel conversation cache
+            preview_content: String::new(),
+            preview_session_id: None,
+            preview_area: None,
+            list_area: None,
+            full_view_area: None,
         };
         app.filter();
 
@@ -966,10 +993,10 @@ impl App {
             .collect();
 
         // If there's a keyword query, use Tantivy full-text search
-        if !self.query.trim().is_empty() {
+        if !self.query.value().trim().is_empty() {
             let (snippets, ranked_ids) = search_tantivy(
                 &self.index_path,
-                &self.query,
+                self.query.value(),
                 self.filter_claude_home.as_deref(),
                 self.filter_codex_home.as_deref(),
             );
@@ -1057,22 +1084,17 @@ impl App {
             .map(|&i| &self.sessions[i])
     }
 
-    fn on_char(&mut self, c: char) {
-        self.query.push(c);
-        // Don't filter immediately - mark as pending for debounced execution
-        self.last_query_change = Some(Instant::now());
-        self.pending_filter = true;
-    }
-
-    fn on_backspace(&mut self) {
-        self.query.pop();
-        // Don't filter immediately - mark as pending for debounced execution
-        self.last_query_change = Some(Instant::now());
-        self.pending_filter = true;
+    /// Handle a key event for the search input using tui-input
+    fn handle_search_input(&mut self, event: &Event) {
+        if self.query.handle_event(event).is_some() {
+            // Input changed - mark as pending for debounced execution
+            self.last_query_change = Some(Instant::now());
+            self.pending_filter = true;
+        }
     }
 
     fn has_active_filters(&self) -> bool {
-        !self.query.is_empty()
+        !self.query.value().is_empty()
             || self.filter_min_lines.is_some()
             || self.filter_after_date.is_some()
             || self.filter_before_date.is_some()
@@ -1085,7 +1107,7 @@ impl App {
     }
 
     fn on_escape(&mut self) {
-        if self.query.is_empty() {
+        if self.query.value().is_empty() {
             // If there are active filters, show confirmation before exiting
             if self.has_active_filters() {
                 self.confirming_exit = true;
@@ -1093,7 +1115,7 @@ impl App {
                 self.should_quit = true;
             }
         } else {
-            self.query.clear();
+            self.query.reset();
             self.filter();
         }
     }
@@ -1126,17 +1148,18 @@ impl App {
         }
     }
 
-    fn on_enter(&mut self) {
-        if let Some(session) = self.selected_session() {
-            self.should_select = Some(session.clone());
-            self.should_quit = true;
-        }
-    }
-
-    fn toggle_scope(&mut self) {
-        self.scope_global = !self.scope_global;
-        self.filter();
-    }
+    // unused - upstream may use these
+    // fn on_enter(&mut self) {
+    //     if let Some(session) = self.selected_session() {
+    //         self.should_select = Some(session.clone());
+    //         self.should_quit = true;
+    //     }
+    // }
+    //
+    // fn toggle_scope(&mut self) {
+    //     self.scope_global = !self.scope_global;
+    //     self.filter();
+    // }
 
     fn scope_display(&self) -> String {
         // Determine which directory to display
@@ -1323,6 +1346,9 @@ fn render(frame: &mut Frame, app: &mut App) {
         render_full_conversation(frame, app, &t);
         return;
     }
+
+    // Reset full view mouse area when in session list mode
+    app.full_view_area = None;
 
     let area = frame.area();
 
@@ -1816,7 +1842,7 @@ fn render_search_bar(frame: &mut Frame, app: &App, t: &Theme, area: Rect) {
     // Make search box smaller to give more space to directory path (shift right side left by ~20 chars)
     let search_width = (area.width as usize).saturating_sub(right_side_width + 32);
 
-    let middle_line = if app.query.is_empty() {
+    let middle_line = if app.query.value().is_empty() {
         let placeholder = " Search...";
         let padding = search_width.saturating_sub(placeholder.len());
         Line::from(vec![
@@ -1829,12 +1855,37 @@ fn render_search_bar(frame: &mut Frame, app: &App, t: &Theme, area: Rect) {
             Span::styled(format!(" {}", scope_label), Style::default().fg(t.scope_label_fg)),
         ])
     } else {
-        let query_len = 1 + app.query.chars().count() + 1;
-        let padding = search_width.saturating_sub(query_len);
+        // Use tui-input's visual_scroll for long queries
+        let input_width = search_width.saturating_sub(3); // account for " " prefix and cursor
+        let scroll = app.query.visual_scroll(input_width);
+        let query_val = app.query.value();
+
+        // Get visible portion of the query
+        let visible_query: String = query_val
+            .chars()
+            .skip(scroll)
+            .take(input_width)
+            .collect();
+
+        // Calculate cursor position within visible area
+        let cursor_pos = app.query.visual_cursor().saturating_sub(scroll);
+
+        // Build the query display with cursor
+        let (before_cursor, after_cursor) = visible_query.split_at(
+            visible_query.char_indices()
+                .nth(cursor_pos)
+                .map(|(i, _)| i)
+                .unwrap_or(visible_query.len())
+        );
+
+        let display_len = 1 + visible_query.chars().count() + 1;
+        let padding = search_width.saturating_sub(display_len);
+
         Line::from(vec![
             Span::raw(" "),
-            Span::raw(&app.query),
+            Span::raw(before_cursor.to_string()),
             Span::styled("█", Style::default().fg(t.accent)),
+            Span::raw(after_cursor.to_string()),
             Span::raw(" ".repeat(padding)),
             Span::styled(" │ ", Style::default().fg(t.separator_fg)),
             Span::styled(&session_count, Style::default().fg(t.dim_fg)),
@@ -1862,10 +1913,14 @@ fn render_search_bar(frame: &mut Frame, app: &App, t: &Theme, area: Rect) {
 }
 
 fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
-    let available_width = area.width.saturating_sub(2) as usize;
+    // Store list area for mouse scroll detection
+    app.list_area = Some(area);
+
+    // TODO: upstream uses this for layout calculations
+    let _available_width = area.width.saturating_sub(2) as usize;
 
     if app.filtered.is_empty() {
-        let msg = if app.query.is_empty() {
+        let msg = if app.query.value().is_empty() {
             "No sessions"
         } else {
             "No results"
@@ -2013,9 +2068,10 @@ fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) 
             };
             let effective_snippet_width = snippet_width.saturating_sub(title_len);
 
-            let snippet_line = if app.query.is_empty() {
-                // No query: show last message content
-                let snippet = truncate(&s.last_msg_content, effective_snippet_width);
+            let snippet_line = if app.query.value().is_empty() {
+                // No query: show last message content (strip control codes for clean display)
+                let clean_content = strip_ansi(&s.last_msg_content);
+                let snippet = truncate(&clean_content, effective_snippet_width);
                 let mut spans = vec![Span::styled(indent.clone(), snippet_style)];
                 if let Some(ref tp) = title_prefix {
                     spans.push(Span::styled(tp.clone(), title_style));
@@ -2025,21 +2081,24 @@ fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) 
             } else {
                 // With query: use Tantivy snippet with HTML tags for highlighting
                 if let Some(snippet_html) = app.search_snippets.get(&s.session_id) {
+                    // Strip control codes first, then process HTML tags
+                    let clean_html = strip_ansi(snippet_html);
                     // Truncate the plain text version but render with HTML tags
-                    let snippet_plain = strip_html_tags(snippet_html);
-                    let truncated_plain = truncate(&snippet_plain, effective_snippet_width);
+                    let snippet_plain = strip_html_tags(&clean_html);
+                    let _truncated_plain = truncate(&snippet_plain, effective_snippet_width);
                     // Find how much of the HTML snippet to use based on plain text length
                     let mut spans = vec![Span::styled(indent.clone(), snippet_style)];
                     if let Some(ref tp) = title_prefix {
                         spans.push(Span::styled(tp.clone(), title_style));
                     }
                     // Truncate HTML snippet approximately (allow extra for tags)
-                    let html_truncated: String = snippet_html.chars().take(effective_snippet_width + 50).collect();
+                    let html_truncated: String = clean_html.chars().take(effective_snippet_width + 50).collect();
                     spans.extend(render_snippet_with_html_tags(&html_truncated, snippet_style, highlight_style));
                     Line::from(spans)
                 } else {
                     let first_content = if !s.first_user_msg_content.is_empty() { &s.first_user_msg_content } else { &s.first_msg_content };
-                    let snippet = truncate(first_content, effective_snippet_width);
+                    let clean_content = strip_ansi(first_content);
+                    let snippet = truncate(&clean_content, effective_snippet_width);
                     let mut spans = vec![Span::styled(indent.clone(), snippet_style)];
                     if let Some(ref tp) = title_prefix {
                         spans.push(Span::styled(tp.clone(), title_style));
@@ -2083,121 +2142,115 @@ fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) 
 }
 
 fn render_preview(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
+    // Store preview area for mouse scroll detection
+    app.preview_area = Some(area);
+
     let Some(s) = app.selected_session() else {
         return;
     };
 
-    let bubble_width = area.width.saturating_sub(4) as usize;
-    let mut lines: Vec<Line> = Vec::new();
-
-    // First user message - prefer first_user_msg_content (skips meta messages),
-    // fall back to first_msg_content for backwards compatibility
-    let first_preview_content = if !s.first_user_msg_content.is_empty() {
-        &s.first_user_msg_content
-    } else {
-        &s.first_msg_content
-    };
-    let first_preview_role = if !s.first_user_msg_content.is_empty() {
-        "user"
-    } else {
-        s.first_msg_role.as_str()
-    };
-
-    if !first_preview_content.is_empty() {
-        let (role_label, label_color, bubble_bg) = if first_preview_role == "user" {
-            ("User", t.user_label, t.user_bubble_bg)
-        } else if s.agent == "claude" {
-            ("Claude", t.claude_source, t.claude_bubble_bg)
+    // Load conversation content if not already loaded for this session
+    let session_id = s.session_id.clone();
+    let export_path = s.export_path.clone();
+    let agent = s.agent.clone();
+    if app.preview_session_id.as_ref() != Some(&session_id) {
+        let raw_content = std::fs::read_to_string(&export_path)
+            .unwrap_or_else(|_| String::new());
+        let parsed = if export_path.ends_with(".jsonl") {
+            parse_jsonl_to_conversation(&raw_content)
         } else {
-            ("Codex", t.codex_source, t.codex_bubble_bg)
+            raw_content
         };
-
-        lines.push(Line::from(vec![
-            Span::styled(" ── FIRST ── ", Style::default().fg(t.dim_fg)),
-            Span::styled(role_label, Style::default().fg(label_color).add_modifier(Modifier::BOLD)),
-        ]));
-
-        for wrapped in wrap_text(first_preview_content, bubble_width).iter().take(6) {
-            let padding = bubble_width.saturating_sub(wrapped.chars().count());
-            lines.push(Line::from(vec![
-                Span::styled(" ", Style::default().bg(bubble_bg)),
-                Span::styled(wrapped.clone(), Style::default().bg(bubble_bg)),
-                Span::styled(" ".repeat(padding + 1), Style::default().bg(bubble_bg)),
-            ]));
-        }
-
-        lines.push(Line::from(""));
+        // Keep raw content - we'll use ansi-to-tui for rendering
+        app.preview_content = parsed;
+        app.preview_session_id = Some(session_id.clone());
+        app.preview_scroll = 0;
     }
 
-    // Search snippet - show matching content when searching (with keyword highlighting)
-    if !app.query.is_empty() {
-        if let Some(snippet) = app.search_snippets.get(&s.session_id) {
-            if !snippet.is_empty() {
-                lines.push(Line::from(vec![
-                    Span::styled(" ── MATCH ── ", Style::default().fg(t.accent).add_modifier(Modifier::BOLD)),
-                ]));
+    // Determine agent label and colors for assistant messages
+    let (agent_label, assistant_bg, assistant_fg) = if agent == "claude" {
+        ("Claude", t.claude_bubble_bg, t.claude_source)
+    } else {
+        ("Codex", t.codex_bubble_bg, t.codex_source)
+    };
 
-                // Styles for the match snippet
-                let match_bg = Color::Rgb(50, 40, 30); // Warm/highlighted background
-                let base_style = Style::default().bg(match_bg).fg(t.accent);
-                let highlight_style = Style::default().bg(Color::Yellow).fg(Color::Black).add_modifier(Modifier::BOLD);
+    // TODO: upstream uses this for padding calculations
+    let _content_width = area.width.saturating_sub(2) as usize;
 
-                // Strip HTML tags for wrapping calculation, but use original for display
-                let snippet_plain = strip_html_tags(snippet);
-                // Display 12 lines (50% more than original 8)
-                for wrapped in wrap_text(snippet, bubble_width + 7).iter().take(12) {
-                    // Account for <b></b> tags in padding calculation
-                    let visible_chars = strip_html_tags(wrapped).chars().count();
-                    let padding = bubble_width.saturating_sub(visible_chars);
-
-                    // Build line with HTML tag-based highlighting
-                    let mut line_spans: Vec<Span> = Vec::new();
-                    line_spans.push(Span::styled(" ", Style::default().bg(match_bg)));
-
-                    // Parse <b>...</b> tags for highlighting
-                    let highlighted = render_snippet_with_html_tags(wrapped, base_style, highlight_style);
-                    line_spans.extend(highlighted);
-
-                    line_spans.push(Span::styled(" ".repeat(padding + 1), Style::default().bg(match_bg)));
-                    lines.push(Line::from(line_spans));
-                }
-
-                lines.push(Line::from(""));
+    // Helper: convert text with potential ANSI codes to styled spans using ansi-to-tui
+    let ansi_to_spans = |text: &str| -> Vec<Span<'static>> {
+        use ansi_to_tui::IntoText;
+        match text.as_bytes().into_text() {
+            Ok(styled_text) => {
+                // Flatten all lines and spans into a single vec
+                styled_text.lines.into_iter()
+                    .flat_map(|line| line.spans.into_iter())
+                    .collect()
             }
+            Err(_) => vec![Span::raw(text.to_string())],
         }
-    }
+    };
 
-    // Last message - labeled as "LAST MESSAGE" (if different from first)
-    if !s.last_msg_content.is_empty() && s.last_msg_content != s.first_msg_content {
-        let (role_label, label_color, bubble_bg) = if s.last_msg_role == "user" {
-            ("User", t.user_label, t.user_bubble_bg)
-        } else if s.agent == "claude" {
-            ("Claude", t.claude_source, t.claude_bubble_bg)
-        } else {
-            ("Codex", t.codex_source, t.codex_bubble_bg)
-        };
-
-        lines.push(Line::from(vec![
-            Span::styled(" ── LAST ── ", Style::default().fg(t.dim_fg)),
-            Span::styled(role_label, Style::default().fg(label_color).add_modifier(Modifier::BOLD)),
-        ]));
-
-        for wrapped in wrap_text(&s.last_msg_content, bubble_width).iter().take(6) {
-            let padding = bubble_width.saturating_sub(wrapped.chars().count());
-            lines.push(Line::from(vec![
-                Span::styled(" ", Style::default().bg(bubble_bg)),
-                Span::styled(wrapped.clone(), Style::default().bg(bubble_bg)),
-                Span::styled(" ".repeat(padding + 1), Style::default().bg(bubble_bg)),
-            ]));
-        }
-    }
+    // Build conversation lines
+    let content_lines: Vec<Line> = app
+        .preview_content
+        .lines()
+        .map(|line| {
+            if line.starts_with("> ") {
+                // User message
+                let msg_content: String = line.chars().skip(2).collect();
+                let label = " User ";
+                let base_style = Style::default().bg(t.user_bubble_bg);
+                let mut spans = vec![
+                    Span::styled(label, Style::default().fg(t.user_label).add_modifier(Modifier::BOLD)),
+                    Span::styled(" ", base_style),
+                ];
+                // Convert content with ANSI codes, apply bubble background
+                for mut span in ansi_to_spans(&msg_content) {
+                    span.style = span.style.bg(t.user_bubble_bg);
+                    spans.push(span);
+                }
+                Line::from(spans)
+            } else if line.starts_with("⏺ ") {
+                // Assistant message
+                let msg_content: String = line.chars().skip(2).collect();
+                let label = format!(" {} ", agent_label);
+                let base_style = Style::default().bg(assistant_bg);
+                let mut spans = vec![
+                    Span::styled(label, Style::default().fg(assistant_fg).add_modifier(Modifier::BOLD)),
+                    Span::styled(" ", base_style),
+                ];
+                // Convert content with ANSI codes, apply bubble background
+                for mut span in ansi_to_spans(&msg_content) {
+                    span.style = span.style.bg(assistant_bg);
+                    spans.push(span);
+                }
+                Line::from(spans)
+            } else if line.starts_with("  ⎿") {
+                // Tool result - use ansi-to-tui for potential colored output
+                let content: String = line.chars().skip(3).collect();
+                let mut spans = vec![Span::styled("   ", Style::default().fg(t.dim_fg))];
+                spans.extend(ansi_to_spans(&content));
+                Line::from(spans)
+            } else if line.starts_with("  ") && !line.trim().is_empty() {
+                // Continuation line - may contain ANSI codes
+                let content: String = line.chars().skip(2).collect();
+                let mut spans = vec![Span::styled("   ", Style::default())];
+                spans.extend(ansi_to_spans(&content));
+                Line::from(spans)
+            } else {
+                // Empty or other lines
+                Line::from("")
+            }
+        })
+        .collect();
 
     // Clamp scroll
     let visible_height = area.height as usize;
-    let max_scroll = lines.len().saturating_sub(visible_height.min(lines.len()));
+    let max_scroll = content_lines.len().saturating_sub(visible_height.min(content_lines.len()));
     app.preview_scroll = app.preview_scroll.min(max_scroll);
 
-    let visible_lines: Vec<Line> = lines.into_iter().skip(app.preview_scroll).collect();
+    let visible_lines: Vec<Line> = content_lines.into_iter().skip(app.preview_scroll).collect();
     let paragraph = Paragraph::new(visible_lines);
     frame.render_widget(paragraph, area);
 }
@@ -2371,6 +2424,10 @@ fn render_status_bar(frame: &mut Frame, app: &App, t: &Theme, area: Rect, show_l
 fn render_full_conversation(frame: &mut Frame, app: &mut App, t: &Theme) {
     let area = frame.area();
 
+    // Reset session list mouse areas when in full view mode
+    app.preview_area = None;
+    app.list_area = None;
+
     // Layout: header (2 lines), content, footer (1 line)
     let layout = Layout::default()
         .direction(Direction::Vertical)
@@ -2380,6 +2437,9 @@ fn render_full_conversation(frame: &mut Frame, app: &mut App, t: &Theme) {
             Constraint::Length(1), // Footer
         ])
         .split(area);
+
+    // Store full view area for mouse scroll detection
+    app.full_view_area = Some(layout[1]);
 
     // Header - session info
     if let Some(s) = app.selected_session() {
@@ -2430,11 +2490,11 @@ fn render_full_conversation(frame: &mut Frame, app: &mut App, t: &Theme) {
     // Original query highlighting (blue) - pre-process with SnippetGenerator
     let query_highlight = Style::default().bg(Color::Rgb(30, 80, 180)).fg(Color::White).add_modifier(Modifier::BOLD);
     let mut query_html_lines: Vec<String> = Vec::new();
-    if !app.query.is_empty() {
+    if !app.query.value().is_empty() {
         if let Ok(index) = Index::open_in_dir(&app.index_path) {
             if let Ok(content_field) = index.schema().get_field("content") {
                 let query_parser = QueryParser::for_index(&index, vec![content_field]);
-                let parsed_query = query_parser.parse_query_lenient(&app.query).0;
+                let parsed_query = query_parser.parse_query_lenient(app.query.value()).0;
                 if let Ok(reader) = index.reader() {
                     let searcher = reader.searcher();
                     if let Ok(mut gen) = SnippetGenerator::create(&searcher, &*parsed_query, content_field) {
@@ -2509,7 +2569,7 @@ fn render_full_conversation(frame: &mut Frame, app: &mut App, t: &Theme) {
             } else if line.starts_with("  ⎿") {
                 // Tool result - style as dimmed (2 spaces + ⎿ character)
                 context = MsgContext::None;
-                let content: String = line.chars().skip(3).collect(); // Skip "  ⎿"
+                // let content: String = line.chars().skip(3).collect(); // Skip "  ⎿" -- unused, using html_content
                 let html_content = get_html_content(idx, 3, line);
                 let base_style = Style::default().fg(t.dim_fg);
                 let mut spans = vec![Span::styled("      ", base_style)];
@@ -2690,6 +2750,7 @@ fn truncate(s: &str, max: usize) -> String {
 
 /// Find text containing query keywords and return spans with highlighted matches.
 /// If query is empty, returns None. Otherwise returns Some(Vec<Span>) with highlighted keywords.
+#[allow(dead_code)] // unused - keeping for upstream compatibility
 fn find_matching_snippet<'a>(
     content: &str,
     query: &str,
@@ -2801,6 +2862,7 @@ fn find_matching_snippet<'a>(
 }
 
 /// Highlight multiple keywords in text (from space-separated query), returning styled spans.
+#[allow(dead_code)] // unused - keeping for upstream compatibility
 fn highlight_keywords_in_line<'a>(
     text: &str,
     query: &str,
@@ -2892,7 +2954,7 @@ fn render_snippet_with_html_tags<'a>(
 ) -> Vec<Span<'a>> {
     let mut spans: Vec<Span<'a>> = Vec::new();
     let mut current_pos = 0;
-    let bytes = text.as_bytes();
+    // let bytes = text.as_bytes(); // unused
 
     while current_pos < text.len() {
         // Find next <b> tag
@@ -2933,6 +2995,13 @@ fn render_snippet_with_html_tags<'a>(
 /// Strip HTML tags from snippet for plain text output (e.g., JSON)
 fn strip_html_tags(text: &str) -> String {
     text.replace("<b>", "").replace("</b>", "")
+}
+
+/// Strip ANSI escape sequences from text using the strip-ansi-escapes crate.
+/// Used for session list snippets where we want clean, unstyled text.
+fn strip_ansi(text: &str) -> String {
+    let stripped = strip_ansi_escapes::strip(text);
+    String::from_utf8_lossy(&stripped).into_owned()
 }
 
 /// Merge adjacent <b> tags to highlight phrases as a unit.
@@ -3044,6 +3113,7 @@ fn render_with_dual_highlighting<'a>(
 }
 
 /// Highlight search pattern matches in text, returning spans with base and highlight styles
+#[allow(dead_code)] // unused - keeping for upstream compatibility
 fn highlight_search_in_text<'a>(
     text: &str,
     pattern: &str,
@@ -3167,6 +3237,7 @@ fn extract_date_for_comparison(timestamp: &str) -> Option<String> {
     None
 }
 
+#[allow(dead_code)] // unused - keeping for upstream compatibility
 fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     let mut result = Vec::new();
     for line in text.lines() {
@@ -3201,6 +3272,7 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     result
 }
 
+#[allow(dead_code)] // unused - keeping for upstream compatibility
 fn format_time_ago(modified: &str) -> String {
     let Ok(dt) = DateTime::parse_from_rfc3339(modified)
         .or_else(|_| {
@@ -3454,6 +3526,7 @@ fn read_codex_session_cwd(path: &std::path::Path) -> Option<String> {
 }
 
 /// Parse ps etime format [[DD-]HH:]MM:SS to calculate process start time
+#[allow(dead_code)] // unused - keeping for upstream compatibility
 fn parse_etime_to_start_time(etime: &str, now: std::time::SystemTime) -> Option<std::time::SystemTime> {
     let mut total_secs: u64 = 0;
 
@@ -4040,11 +4113,11 @@ fn execute_action_item(app: &mut App, item: ActionMenuItem) {
                 // Build query match lines using SnippetGenerator
                 app.query_match_lines.clear();
                 app.query_match_current = 0;
-                if !app.query.is_empty() {
+                if !app.query.value().is_empty() {
                     if let Ok(index) = Index::open_in_dir(&app.index_path) {
                         if let Ok(content_field) = index.schema().get_field("content") {
                             let query_parser = QueryParser::for_index(&index, vec![content_field]);
-                            let parsed_query = query_parser.parse_query_lenient(&app.query).0;
+                            let parsed_query = query_parser.parse_query_lenient(app.query.value()).0;
                             if let Ok(reader) = index.reader() {
                                 let searcher = reader.searcher();
                                 if let Ok(mut gen) = SnippetGenerator::create(&searcher, &*parsed_query, content_field) {
@@ -4561,7 +4634,7 @@ fn main() -> Result<()> {
     // Interactive TUI mode
     enable_raw_mode()?;
     let mut stdout = stdout();
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -4595,7 +4668,81 @@ fn main() -> Result<()> {
 
         // Drain all pending events (non-blocking)
         while event::poll(Duration::from_millis(0))? {
-            if let Event::Key(key) = event::read()? {
+            let ev = event::read()?;
+
+            // Handle mouse events for scrolling
+            if let Event::Mouse(mouse) = ev {
+                // Skip mouse handling when modals are open to prevent background scrolling
+                if app.action_mode.is_some()
+                    || app.confirming_exit
+                    || app.confirming_delete
+                    || app.filter_modal_open
+                    || app.scope_modal_open
+                {
+                    continue;
+                }
+
+                // Check if mouse is within full view area (takes priority when in full view mode)
+                if let Some(area) = app.full_view_area {
+                    if mouse.column >= area.x
+                        && mouse.column < area.x + area.width
+                        && mouse.row >= area.y
+                        && mouse.row < area.y + area.height
+                    {
+                        match mouse.kind {
+                            MouseEventKind::ScrollDown => {
+                                app.full_content_scroll = app.full_content_scroll.saturating_add(3);
+                            }
+                            MouseEventKind::ScrollUp => {
+                                app.full_content_scroll = app.full_content_scroll.saturating_sub(3);
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+                }
+                // Check if mouse is within preview area
+                if let Some(area) = app.preview_area {
+                    if mouse.column >= area.x
+                        && mouse.column < area.x + area.width
+                        && mouse.row >= area.y
+                        && mouse.row < area.y + area.height
+                    {
+                        match mouse.kind {
+                            MouseEventKind::ScrollDown => {
+                                app.scroll_preview_down(3);
+                            }
+                            MouseEventKind::ScrollUp => {
+                                app.scroll_preview_up(3);
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+                }
+                // Check if mouse is within list area
+                if let Some(area) = app.list_area {
+                    if mouse.column >= area.x
+                        && mouse.column < area.x + area.width
+                        && mouse.row >= area.y
+                        && mouse.row < area.y + area.height
+                    {
+                        match mouse.kind {
+                            MouseEventKind::ScrollDown => {
+                                app.on_down();
+                            }
+                            MouseEventKind::ScrollUp => {
+                                app.on_up();
+                            }
+                            _ => {}
+                        }
+                        continue;
+                    }
+                }
+                continue;
+            }
+
+            if let Event::Key(key) = ev {
                 if key.kind == KeyEventKind::Press {
                     // Clear status message on any keypress
                     app.status_message = None;
@@ -4666,7 +4813,7 @@ fn main() -> Result<()> {
                                 KeyCode::Backspace => {
                                     app.view_search_pattern.pop();
                                 }
-                                KeyCode::Char(c) => {
+                                KeyCode::Char(c) if !c.is_control() => {
                                     app.view_search_pattern.push(c);
                                 }
                                 _ => {}
@@ -5119,8 +5266,8 @@ fn main() -> Result<()> {
                             KeyCode::Char(c) if c.is_ascii_digit() && (mode == InputMode::MinLines || mode == InputMode::JumpToLine) => {
                                 app.input_buffer.push(c);
                             }
-                            KeyCode::Char(c) if mode == InputMode::AfterDate || mode == InputMode::BeforeDate || mode == InputMode::ScopeDir || mode == InputMode::Branch => {
-                                // Accept any character for flexible input
+                            KeyCode::Char(c) if !c.is_control() && (mode == InputMode::AfterDate || mode == InputMode::BeforeDate || mode == InputMode::ScopeDir || mode == InputMode::Branch) => {
+                                // Accept any printable character for flexible input
                                 app.input_buffer.push(c);
                             }
                             KeyCode::Backspace if mode == InputMode::MinLines || mode == InputMode::JumpToLine || mode == InputMode::AfterDate || mode == InputMode::BeforeDate || mode == InputMode::ScopeDir || mode == InputMode::Branch => {
@@ -5211,10 +5358,6 @@ fn main() -> Result<()> {
                             KeyCode::Char(':') => {
                                 app.command_mode = true;
                             }
-                            KeyCode::Char(' ') => {
-                                // Space: add to query (for multi-word search)
-                                app.on_char(' ');
-                            }
                             KeyCode::Esc => app.on_escape(),
                             KeyCode::Enter => {
                                 // If there's pending jump input, use it
@@ -5229,20 +5372,18 @@ fn main() -> Result<()> {
                             KeyCode::Down => app.on_down(),
                             KeyCode::PageUp => app.page_up(10),
                             KeyCode::PageDown => app.page_down(10),
-                            KeyCode::Home => {
-                                // Jump to first result
+                            KeyCode::Home if key.modifiers.is_empty() => {
+                                // Jump to first result (without modifiers)
                                 app.selected = 0;
                                 app.preview_scroll = 0;
                             }
-                            KeyCode::End => {
-                                // Jump to last result
+                            KeyCode::End if key.modifiers.is_empty() => {
+                                // Jump to last result (without modifiers)
                                 if !app.filtered.is_empty() {
                                     app.selected = app.filtered.len() - 1;
                                     app.preview_scroll = 0;
                                 }
                             }
-                            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => app.page_up(10),
-                            KeyCode::Backspace => app.on_backspace(),
                             KeyCode::Char('/') => {
                                 // Open scope modal
                                 app.scope_modal_open = true;
@@ -5263,8 +5404,11 @@ fn main() -> Result<()> {
                                 app.sort_by_time = !app.sort_by_time;
                                 app.filter(); // Re-sort results
                             }
-                            KeyCode::Char(c) => app.on_char(c),
-                            _ => {}
+                            // Delegate all other keys to tui-input for readline support
+                            // (handles chars, backspace, delete, Ctrl+A/E/W/U/K, arrows, etc.)
+                            _ => {
+                                app.handle_search_input(&ev);
+                            }
                         }
                     }
                 }
@@ -5276,7 +5420,7 @@ fn main() -> Result<()> {
     }
 
     disable_raw_mode()?;
-    execute!(io::stdout(), LeaveAlternateScreen)?;
+    execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
 
     if let Some(session) = app.should_select {
         // Output session with action and filter state for Python handler
@@ -5284,7 +5428,7 @@ fn main() -> Result<()> {
             "session": session,
             "action": app.selected_action.as_deref().unwrap_or("menu"),
             "filter_state": {
-                "query": app.query,
+                "query": app.query.value(),
                 "scope_global": app.scope_global,
                 "filter_dir": app.filter_dir,
                 "include_original": app.include_original,
