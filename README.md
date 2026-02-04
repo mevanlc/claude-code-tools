@@ -330,6 +330,7 @@ The above session resumption methods are useful to continue your work from the
 Codex-CLI, with a pleasant self-explanatory TUI for humans, and a CLI mode for Agents
 to find past work. (The Rust/Tantivy-based search and TUI was inspired by the excellent
 TUI in the [zippoxer/recall](https://github.com/zippoxer/recall) repo).
+See also [clicodelog](https://github.com/monk1337/clicodelog) for a browsable HTML view of sessions across Claude Code, Gemini CLI, and Codex CLI.
 
 Users can launch the search TUI using [`aichat search ...`](#aichat-search--find-and-select-sessions) and (sub-)
 [agents can run](#agent-access-to-history-the-session-searcher-sub-agent)
