@@ -128,6 +128,34 @@ llama-server --fim-qwen-30b-default --port 8127
 Downloads `ggml-org/Qwen3-Coder-30B-A3B-Instruct-Q8_0-GGUF` automatically on first
 run.
 
+### Qwen3-Coder-Next-80B-A3B (Newest SOTA Coder)
+
+The latest and most capable coding model from Qwen. 80B MoE with only 3B active
+parameters. Requires ~46GB RAM.
+
+```bash
+llama-server -hf unsloth/Qwen3-Coder-Next-GGUF:UD-Q4_K_XL \
+  --port 8130 \
+  -c 131072 \
+  -b 2048 \
+  -ub 1024 \
+  --parallel 1 \
+  -fa on \
+  --jinja \
+  --temp 1.0 \
+  --top-p 0.95 \
+  --top-k 40 \
+  --min-p 0.01
+```
+
+**Performance:** TBD (new model)
+
+**Quantization options:**
+
+| Quant | Size | Notes |
+|-------|------|-------|
+| UD-Q4_K_XL | ~46 GB | Recommended for 64GB systems |
+
 ### Qwen3-Next-80B-A3B (Better Long Context)
 
 Newer SOTA model. Slower generation but performance doesn't degrade as much
@@ -229,6 +257,7 @@ llama-server -hf unsloth/GLM-4.7-Flash-GGUF:Q8_0 \
 | Nemotron-3-Nano | 8125 | See full command above |
 | Qwen3-Next-80B-A3B | 8126 | See full command above |
 | Qwen3-Coder-30B | 8127 | `llama-server --fim-qwen-30b-default --port 8127` |
+| Qwen3-Coder-Next | 8130 | See full command above (~46GB RAM) |
 | GLM-4.7-Flash | 8129 | See full command above (requires chat template) |
 
 ## Usage
