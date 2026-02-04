@@ -26,7 +26,7 @@ def main():
         return
 
     # Check if voice is enabled
-    enabled, _voice, _custom_prompt = get_voice_config()
+    enabled, _voice, _custom_prompt, _just_disabled = get_voice_config()
     if not enabled:
         print(json.dumps({"decision": "approve"}))
         return

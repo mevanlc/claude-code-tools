@@ -76,17 +76,6 @@ CLI commands, skills, agents, hooks, plugins. Click on a card below to navigate.
 </a>
 </td>
 </tr>
-<tr>
-<td align="center">
-<a href="#voice">
-<img src="assets/card-voice.svg" alt="voice" width="200"/>
-</a>
-</td>
-<td align="center">
-</td>
-<td align="center">
-</td>
-</tr>
 </table>
 
 <table>
@@ -974,20 +963,33 @@ Use the `/voice:speak` command to configure:
 See the [pocket-tts repo](https://github.com/kyutai-labs/pocket-tts) for the
 latest available voices.
 
+### Recommended: Speech-to-Text Companion
+
+For a complete voice workflow, pair this TTS plugin with
+[Handy](https://github.com/cjpais/Handy) (open-source) using the **Parakeet V3**
+model for speech-to-text. It's stunningly fast with near-instant transcription.
+
+The slight accuracy drop compared to larger models is immaterial when talking to
+an AI. **Pro tip**: Ask the agent to restate what it understood — this confirms
+understanding and helps keep the CLI agent on track.
+
 ### Architecture
 
-The plugin uses two hooks working together:
+The plugin uses a multi-hook strategy for fast, reliable voice summaries:
 
-- **Stop hook**: Blocks the agent from stopping until voice feedback is
-  provided
-- **PostToolUse hook**: Tracks when the `say` script is called and creates
-  session-specific flags to prevent double-voice
+- **UserPromptSubmit hook**: Silently injects voice instructions each turn,
+  telling Claude to end longer responses with a `📢` spoken summary marker
+- **PostToolUse hook**: Brief reminder after each tool call to keep instructions
+  fresh during long tool chains
+- **Stop hook**: Extracts the `📢` marker instantly (no API call), or falls back
+  to headless Claude summarization only if the agent forgot
 
 This ensures:
 
-- Normal Q&A gets voice feedback when the agent stops
-- Explicit "use your voice" requests don't trigger double feedback
-- Multiple concurrent sessions don't interfere with each other
+- **Fast feedback**: Most summaries are instant (marker extraction, no API call)
+- **Reliable**: Headless Claude fallback catches cases where agent forgets
+- **Silent operation**: Hooks use `additionalContext` for noise-free injection
+- **Tone matching**: Summaries match user's style (casual, colorful, etc.)
 
 <a id="using-claude-code-with-open-weight-anthropic-api-compatible-llm-providers"></a>
 ## 🤖 Using Claude Code with Open-weight Anthropic API-compatible LLM Providers
@@ -1154,6 +1156,35 @@ markdown, with references rewritten to use local paths:
 - Default: extract images to files
 - `--no-images`: strip images to placeholders
 - `--keep-base64`: keep base64 data inline
+
+<a id="google-sheets-tools"></a>
+## 📊 Google Sheets Tools (csv2gsheet, gsheet2csv)
+
+Upload CSV files to Google Sheets and download Sheets as CSV. Uses the same
+OAuth credentials as md2gdoc/gdoc2md (see setup above).
+
+### csv2gsheet — CSV to Google Sheets
+
+```bash
+csv2gsheet data.csv                          # Upload to root
+csv2gsheet data.csv --folder "Reports/Data"  # Upload to folder
+csv2gsheet data.csv --name "Q4 Sales"        # Custom name
+csv2gsheet data.csv --on-existing overwrite  # Overwrite if exists
+```
+
+### gsheet2csv — Google Sheets to CSV
+
+```bash
+gsheet2csv "My Spreadsheet"                      # Download from root
+gsheet2csv "My Spreadsheet" --folder "Reports"   # From folder
+gsheet2csv "My Spreadsheet" -o data.csv          # Custom output name
+gsheet2csv "My Spreadsheet" --sheet "Sheet2"     # Specific tab
+gsheet2csv --list --folder Reports               # List spreadsheets
+gsheet2csv "My Spreadsheet" --list-tabs          # List tabs
+```
+
+For multi-tab spreadsheets, use `--sheet` to export a specific tab (default
+exports first tab).
 
 <a id="development"></a>
 ## 🛠️ Development

@@ -19,14 +19,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Add hooks directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
+from voice_common import MAX_SPOKEN_WORDS
+
 PLUGIN_ROOT = Path(__file__).parent.parent
 
 
-def get_voice_config() -> tuple[bool, str, str]:
+def get_voice_config() -> tuple[bool, str, str, bool]:
     """Read voice config from ~/.claude/voice.local.md
 
     Returns:
-        Tuple of (enabled, voice, custom_prompt)
+        Tuple of (enabled, voice, custom_prompt, just_disabled)
     """
     config_file = Path.home() / ".claude" / "voice.local.md"
 
@@ -40,13 +45,14 @@ enabled: true
 
 Use `/voice:speak stop` to disable, `/voice:speak <name>` to change voice.
 """)
-        return True, "azelma", ""
+        return True, "azelma", "", False
 
     content = config_file.read_text()
 
     enabled = True
     voice = "azelma"
     custom_prompt = ""
+    just_disabled = False
 
     lines = content.split("\n")
     in_frontmatter = False
@@ -71,8 +77,11 @@ Use `/voice:speak stop` to disable, `/voice:speak <name>` to change voice.
                    (val.startswith("'") and val.endswith("'")):
                     val = val[1:-1]
                 custom_prompt = val
+            elif line.startswith("just_disabled:"):
+                val = line.split(":", 1)[1].strip()
+                just_disabled = val.lower() == "true"
 
-    return enabled, voice, custom_prompt
+    return enabled, voice, custom_prompt, just_disabled
 
 
 def find_session_file(session_id: str) -> Path | None:
@@ -134,7 +143,7 @@ def word_count(text: str) -> int:
     return len(text.split())
 
 
-def is_short_response(text: str, max_words: int = 25) -> bool:
+def is_short_response(text: str, max_words: int = MAX_SPOKEN_WORDS) -> bool:
     """Check if response is short enough to speak directly."""
     return word_count(text) <= max_words
 
@@ -156,29 +165,75 @@ def extract_message_text(data: dict) -> str | None:
     return None
 
 
-def get_last_assistant_message(session_file: Path) -> str | None:
-    """Get the last assistant message text from session file."""
+def _read_session_messages(session_file: Path) -> tuple[int, int, str | None]:
+    """Read session file and extract message ordering info.
+
+    Returns:
+        Tuple of (last_user_line, last_assistant_text_line, last_assistant_text)
+        - last_user_line: Line number of the most recent user message
+        - last_assistant_text_line: Line number of the most recent assistant with text
+        - last_assistant_text: text content of that assistant message (if any)
+    """
+    last_user_line = -1
+    last_assistant_text_line = -1
     last_assistant_text = None
 
     try:
         with open(session_file, "r", encoding="utf-8") as f:
-            for line in f:
+            for line_num, line in enumerate(f):
                 line = line.strip()
                 if not line:
                     continue
 
                 try:
                     data = json.loads(line)
-                    if data.get("type") == "assistant":
+                    msg_type = data.get("type")
+
+                    if msg_type == "user":
+                        last_user_line = line_num
+
+                    elif msg_type == "assistant":
                         text = extract_message_text(data)
                         if text:
+                            last_assistant_text_line = line_num
                             last_assistant_text = text
+
                 except json.JSONDecodeError:
                     continue
     except Exception:
         pass
 
-    return last_assistant_text
+    return last_user_line, last_assistant_text_line, last_assistant_text
+
+
+def get_last_assistant_message(
+    session_file: Path,
+    max_retries: int = 10,
+    retry_delay: float = 0.5,
+) -> str | None:
+    """Get the last assistant message text, with retry for race conditions.
+
+    The stop hook can fire before the assistant message is written to the session
+    file. This checks if the last assistant message with text comes AFTER the
+    last user message (by line order). If not, it retries.
+
+    Default: 10 retries × 0.5s = 5 seconds total wait window.
+    """
+    import time
+
+    for attempt in range(max_retries):
+        last_user_line, last_asst_line, last_asst_text = _read_session_messages(
+            session_file
+        )
+
+        # Valid if: we have text AND the assistant line comes after the user line
+        if last_asst_text and last_asst_line > last_user_line >= 0:
+            return last_asst_text
+
+        if attempt < max_retries - 1:
+            time.sleep(retry_delay)
+
+    return None
 
 
 def get_recent_conversation(
@@ -310,10 +365,7 @@ YOUR LAST MESSAGE:
         if result.returncode == 0:
             data = json.loads(result.stdout)
             summary = data.get("result", "").strip()
-            # Hard limit: truncate to 25 words max
-            words = summary.split()
-            if len(words) > 25:
-                summary = " ".join(words[:25]) + "..."
+            # No truncation - headless Claude already generates a summary
             return summary
 
     except Exception:
@@ -349,10 +401,18 @@ def main():
         print(json.dumps({"decision": "approve"}))
         return
 
+    # DEBUG: Log the full stop hook input to see what data is available
+    debug_file = Path("/tmp/voice-stop-hook-input.json")
+    try:
+        with open(debug_file, "w") as f:
+            json.dump(data, f, indent=2, default=str)
+    except Exception:
+        pass
+
     session_id = data.get("session_id", "")
 
-    # Check if voice is enabled
-    enabled, voice, custom_prompt = get_voice_config()
+    # Check if voice is enabled (ignore just_disabled - only used by prompt hook)
+    enabled, voice, custom_prompt, _just_disabled = get_voice_config()
     if not enabled:
         print(json.dumps({"decision": "approve"}))
         return
@@ -373,15 +433,18 @@ def main():
     # Get last assistant message
     last_assistant_msg = get_last_assistant_message(session_file)
 
+    # Flexible limit for explicit summaries (1.5x the strict limit)
+    flexible_limit = int(MAX_SPOKEN_WORDS * 1.5)
+
     # Strategy 1: Try to extract 📢 marker (instant!)
     if last_assistant_msg:
         marker_summary = extract_voice_marker(last_assistant_msg)
         if marker_summary:
-            summary = marker_summary
+            summary = trim_to_words(marker_summary, flexible_limit)
 
-    # Strategy 2: If no marker but response is short (≤25 words), speak directly
+    # Strategy 2: If no marker but response is short, speak directly
     if not summary and last_assistant_msg:
-        if is_short_response(last_assistant_msg, max_words=25):
+        if is_short_response(last_assistant_msg, max_words=MAX_SPOKEN_WORDS):
             summary = last_assistant_msg  # Already short enough
 
     # Strategy 3: Fall back to headless Claude summarization (slower)
@@ -390,18 +453,19 @@ def main():
         if conversation:
             summary = summarize_with_claude(conversation, custom_prompt)
             if summary:
+                summary = trim_to_words(summary, flexible_limit)
                 used_headless = True
 
     # Strategy 4: Last resort - truncate last message
     if not summary and last_assistant_msg:
-        summary = trim_to_words(last_assistant_msg, 20)
+        summary = trim_to_words(last_assistant_msg, MAX_SPOKEN_WORDS)
 
     if not summary:
         print(json.dumps({"decision": "approve"}))
         return
 
-    # Final safety: always enforce 25-word max no matter which strategy
-    summary = trim_to_words(summary, 25)
+    # No final truncation - trust explicit summaries (marker or headless Claude)
+    # Only Strategy 2 and 4 use raw text which is already bounded by MAX_SPOKEN_WORDS
 
     # Speak it
     speak_summary(session_id, summary, voice)

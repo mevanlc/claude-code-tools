@@ -5,23 +5,28 @@ Shared voice plugin utilities and constants.
 
 from pathlib import Path
 
+# Word limit for short response detection and fallback truncation.
+# This does NOT apply to explicitly generated summaries (📢 marker or headless Claude).
+MAX_SPOKEN_WORDS = 25
 
-def get_voice_config() -> tuple[bool, str, str]:
+
+def get_voice_config() -> tuple[bool, str, str, bool]:
     """Read voice config from ~/.claude/voice.local.md
 
     Returns:
-        Tuple of (enabled, voice, custom_prompt)
+        Tuple of (enabled, voice, custom_prompt, just_disabled)
     """
     config_file = Path.home() / ".claude" / "voice.local.md"
 
     if not config_file.exists():
-        return True, "azelma", ""
+        return True, "azelma", "", False
 
     content = config_file.read_text()
 
     enabled = True
     voice = "azelma"
     custom_prompt = ""
+    just_disabled = False
 
     lines = content.split("\n")
     in_frontmatter = False
@@ -46,17 +51,45 @@ def get_voice_config() -> tuple[bool, str, str]:
                    (val.startswith("'") and val.endswith("'")):
                     val = val[1:-1]
                 custom_prompt = val
+            elif line.startswith("just_disabled:"):
+                val = line.split(":", 1)[1].strip()
+                just_disabled = val.lower() == "true"
 
-    return enabled, voice, custom_prompt
+    return enabled, voice, custom_prompt, just_disabled
+
+
+def clear_just_disabled_flag() -> None:
+    """Remove the just_disabled flag from config file."""
+    config_file = Path.home() / ".claude" / "voice.local.md"
+
+    if not config_file.exists():
+        return
+
+    content = config_file.read_text()
+    lines = content.split("\n")
+    new_lines = []
+    in_frontmatter = False
+
+    for line in lines:
+        if line.strip() == "---":
+            in_frontmatter = not in_frontmatter
+            new_lines.append(line)
+            continue
+        if in_frontmatter and line.startswith("just_disabled:"):
+            continue  # Skip this line
+        new_lines.append(line)
+
+    config_file.write_text("\n".join(new_lines))
 
 
 def build_full_reminder(custom_prompt: str = "") -> str:
     """Build the full voice reminder for UserPromptSubmit hook."""
     reminder = (
         "Voice feedback is enabled. At the end of your response:\n"
-        "- If ≤25 words of natural speakable text, no summary needed\n"
-        "- If ≤25 words but contains code/paths/technical output, ADD a 📢 summary\n"
-        "- If longer, end with: 📢 [spoken summary, max 25 words]\n\n"
+        f"- If ≤{MAX_SPOKEN_WORDS} words of natural speakable text, no summary needed\n"
+        f"- If ≤{MAX_SPOKEN_WORDS} words but contains code/paths/technical output, "
+        "ADD a 📢 summary\n"
+        "- If longer, end with: 📢 [brief spoken summary]\n\n"
         "VOICE SUMMARY STYLE:\n"
         "- Match the user's tone - if they're casual or use colorful language, "
         "mirror that\n"

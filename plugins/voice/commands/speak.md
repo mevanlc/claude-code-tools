@@ -27,7 +27,7 @@ prompt: "always end with 'peace out'"
   "Voice feedback enabled. Use `/speak stop` to disable, or `/speak <name>` to change voice."
 - When voice name given: Set `voice: <name>` and `enabled: true`, tell user:
   "Voice set to <name> and enabled. Use `/speak stop` to disable."
-- When `stop`: Set `enabled: false` (voice unchanged), tell user:
+- When `stop`: Set `enabled: false` AND `just_disabled: true` (voice unchanged), tell user:
   "Voice feedback disabled. Use `/speak` to re-enable."
 - When `prompt <text>`: Set `prompt: <text>`, tell user:
   "Custom prompt set: <text>"
