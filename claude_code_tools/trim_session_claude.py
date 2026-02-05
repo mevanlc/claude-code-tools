@@ -5,6 +5,23 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
 
+def _zero_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
+    """Zero out all numeric values in a usage dict.
+
+    Handles nested dicts (e.g. server_tool_use,
+    cache_creation) and preserves nulls.
+    """
+    result = {}
+    for k, v in usage.items():
+        if isinstance(v, dict):
+            result[k] = _zero_usage(v)
+        elif isinstance(v, (int, float)):
+            result[k] = 0
+        else:
+            result[k] = v
+    return result
+
+
 def build_tool_name_mapping(input_file: Path) -> Dict[str, str]:
     """
     Build a mapping of tool_use_id to tool name for Claude sessions.
@@ -229,6 +246,13 @@ def process_claude_session(
                 msg["model"] = "trimmed"
                 if "content" in msg:
                     msg["content"] = [{"type": "text", "text": "[Context limit reached in parent session - trimmed]"}]
+
+            # Zero out usage metadata so Claude Code doesn't
+            # think the context is still full from the parent
+            # session. Fresh usage will be populated by the API
+            # on the first successful request.
+            if isinstance(msg.get("usage"), dict):
+                msg["usage"] = _zero_usage(msg["usage"])
 
             # Trim assistant messages if needed
             if data.get("type") == "assistant" and line_num in assistant_indices_to_trim:
