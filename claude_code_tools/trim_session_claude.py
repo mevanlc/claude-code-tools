@@ -359,44 +359,9 @@ def process_claude_session(
                                     num_tools_trimmed += 1
                                     chars_saved += saved
 
-                # Truncate toolUseResult fields — these store
-                # full file contents for undo support and can
-                # be enormous (originalFile, structuredPatch,
-                # oldString, newString, stdout, file, content).
-                if (
-                    "toolUseResult" in data
-                    and isinstance(data["toolUseResult"], dict)
-                ):
-                    tur = data["toolUseResult"]
-                    for k, v in list(tur.items()):
-                        if (
-                            isinstance(v, str)
-                            and len(v) >= threshold
-                        ):
-                            orig_len = len(v)
-                            tur[k] = (
-                                v[:threshold]
-                                + f"\n\n[...truncated"
-                                f" toolUseResult.{k}"
-                                f" - was {orig_len:,}"
-                                f" chars]"
-                            )
-                            saved = orig_len - len(tur[k])
-                            if saved > 0:
-                                chars_saved += saved
-                        elif (
-                            isinstance(v, list)
-                            and len(json.dumps(v)) >= threshold
-                        ):
-                            orig_len = len(json.dumps(v))
-                            tur[k] = (
-                                f"[truncated list"
-                                f" - was {orig_len:,}"
-                                f" chars]"
-                            )
-                            chars_saved += (
-                                orig_len - len(tur[k])
-                            )
+                # NOTE: toolUseResult is internal metadata for
+                # undo/display — NOT sent to the API. Leave it
+                # intact to avoid breaking Claude Code's UI.
 
             # Replace sessionId if new_session_id provided
             if new_session_id and "sessionId" in data:
