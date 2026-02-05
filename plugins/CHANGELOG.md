@@ -1,5 +1,16 @@
 # Plugin Changelog
 
+## 2026-02-04
+
+### safety-hooks
+
+- feat: enhanced rm_block_hook security - detect rm in pipes, backgrounds, and subshells
+  - Enhanced `extract_subcommands()`: split on all operators (&&, ||, ;, |, &)
+  - New `extract_subshell_commands()`: detects commands in $() and backticks
+  - New `extract_all_commands()`: recursive extraction including nested subshells
+  - 57 new tests covering all bypass attempts
+- Credit to @fizz for the original fix for pipe/background operator bypass
+
 ## 2026-01-24
 
 ### voice

@@ -88,6 +88,9 @@ CLI commands, skills, agents, hooks, plugins. Click on a card below to navigate.
 </a>
 </td>
 <td align="center">
+<a href="#session-repair">
+<img src="assets/card-session-repair.svg" alt="session repair" width="200"/>
+</a>
 </td>
 </tr>
 </table>
@@ -134,12 +137,13 @@ Without `aichat-search`, search won't work, but other `aichat` commands (resume,
 
 ### What You Get
 
-Four commands are installed:
+Five commands are installed:
 
 | Command | Description |
 |---------|-------------|
 | [`aichat`](#aichat-session-management) | Continue work with session lineage and truncation, avoiding compaction;<br>fast (Rust/Tantivy) full-text session search TUI for humans, CLI for agents  |
 | [`tmux-cli`](#tmux-cli-terminal-automation) | Terminal automation for AI agents ("Playwright for terminals") |
+| [`fix-session`](#session-repair) | Detect and repair broken conversation chains in Claude Code sessions |
 | [`vault`](#vault) | Encrypted .env backup and sync |
 | [`env-safe`](#env-safe) | Safe .env inspection without exposing values |
 
@@ -1005,6 +1009,64 @@ This ensures:
 - **Reliable**: Headless Claude fallback catches cases where agent forgets
 - **Silent operation**: Hooks use `additionalContext` for noise-free injection
 - **Tone matching**: Summaries match user's style (casual, colorful, etc.)
+
+<a id="session-repair"></a>
+# 🔧 fix-session — Session Chain Repair
+
+Claude Code has a
+[known bug](https://github.com/anthropics/claude-code/issues/22107)
+where progress/subagent UUIDs contaminate the conversation chain,
+creating orphan `parentUuid` references. When you resume a broken
+session, Claude only sees the messages after the break — losing
+all prior context.
+
+`fix-session` detects and repairs these broken chains.
+This tool is specific to Claude Code sessions (not Codex CLI).
+
+### Usage
+
+```bash
+# Analyze a session (dry run) — accepts partial session IDs
+fix-session f8ddc
+
+# Fix in place (creates .bak backup before modifying)
+fix-session f8ddc --fix --in-place
+
+# Fix and write to a new file
+fix-session f8ddc --fix --output fixed.jsonl
+
+# Verbose output showing orphan details
+fix-session f8ddc --verbose
+```
+
+### How It Works
+
+1. Loads the session JSONL and identifies conversation entries
+   (user, assistant, system, summary)
+2. Finds entries whose `parentUuid` points to a non-conversation
+   entry (e.g., a progress or subagent message) — these are
+   "orphans"
+3. Relinks each orphan to the previous conversation entry in
+   file order, restoring the chain
+4. Verifies the fix by walking the chain from end to start
+
+A healthy session produces no output and exits immediately.
+
+### Programmatic API
+
+```python
+from pathlib import Path
+from claude_code_tools.fix_session import check_and_fix_session
+
+# Returns True if fixes were needed, False if healthy
+fixed = check_and_fix_session(Path("session.jsonl"))
+```
+
+`check_and_fix_session()` auto-fixes in place (creating a `.bak`
+backup) and prints a one-line summary. It's designed to be called
+before resuming a session.
+
+---
 
 <a id="using-claude-code-with-open-weight-anthropic-api-compatible-llm-providers"></a>
 ## 🤖 Using Claude Code with Open-weight Anthropic API-compatible LLM Providers
