@@ -10,6 +10,10 @@ readme = "../README.md"
 keywords = ["claude", "codex", "search", "tui", "tantivy"]
 categories = ["command-line-utilities"]
 
+[features]
+default = ["arboard"]  # Use arboard by default
+termux = []  # Use termux-clipboard-set/get instead of arboard
+
 [[bin]]
 name = "aichat-search"
 path = "src/main.rs"
@@ -24,7 +28,7 @@ tantivy = "0.25"
 
 # Utilities
 anyhow = "1"
-arboard = "3"  # Clipboard support
+arboard = { version = "3", optional = true }  # Clipboard support (disabled for termux)
 chrono = "0.4"
 dirs = "5"
 serde = { version = "1", features = ["derive"] }

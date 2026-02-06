@@ -6,6 +6,8 @@
 //! - Preview pane with conversation messages
 //! - Keyboard shortcuts for navigation and actions
 
+mod clipboard;
+
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, TimeZone, Utc};
 use crossterm::{
@@ -3672,17 +3674,13 @@ fn execute_action_item(app: &mut App, item: ActionMenuItem) {
         ActionMenuItem::CopyId => {
             // Copy session ID to clipboard (handled in Rust)
             if let Some(session) = app.selected_session() {
-                match arboard::Clipboard::new() {
-                    Ok(mut clipboard) => {
-                        if clipboard.set_text(&session.session_id).is_ok() {
-                            app.status_message =
-                                Some(format!("Copied: {}", session.session_id));
-                        } else {
-                            app.status_message = Some("Failed to copy to clipboard".to_string());
-                        }
+                match clipboard::set_text(&session.session_id) {
+                    Ok(()) => {
+                        app.status_message =
+                            Some(format!("Copied: {}", session.session_id));
                     }
                     Err(_) => {
-                        app.status_message = Some("Clipboard not available".to_string());
+                        app.status_message = Some("Failed to copy to clipboard".to_string());
                     }
                 }
             }
