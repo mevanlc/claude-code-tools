@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.10.3] - 2026-02-06
+
+### Fixed
+
+- **Stale voice update on rapid turns**: The stop hook could speak the
+  *previous* turn's message when the JSONL hadn't flushed the current
+  turn yet. The existing retry mechanism only triggered when the
+  ordering check failed — but stale data from the previous turn passed
+  the check, so it was returned immediately without retrying.
+
+  The fix tracks the last-spoken JSONL line number in a per-session
+  state file (`/tmp/voice-last-spoken-{session_id}.json`). On each
+  invocation, if the candidate line matches the previously spoken line,
+  it's treated as stale and the hook retries until new data appears or
+  the 5-second window expires.
+
+### Improved
+
+- **Faster session file lookup**: Uses `transcript_path` from the
+  hook's stdin data directly instead of searching all project
+  directories via `find_session_file()`. Falls back to the search
+  only if `transcript_path` is missing or doesn't exist.
+
 ## [1.9.3] - 2026-01-30
 
 ### Fixed
