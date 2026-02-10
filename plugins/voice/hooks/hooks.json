@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/user_prompt_submit_hook.py\"",
+            "command": "bash -c 'test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/user_prompt_submit_hook.py\" && python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/user_prompt_submit_hook.py\" || echo \"{\\\"decision\\\":\\\"approve\\\"}\"'",
             "timeout": 5
           }
         ]
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/post_tool_use_hook.py\"",
+            "command": "bash -c 'test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/post_tool_use_hook.py\" && python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/post_tool_use_hook.py\" || echo \"{\\\"decision\\\":\\\"approve\\\"}\"'",
             "timeout": 5
           }
         ]
