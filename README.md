@@ -146,87 +146,22 @@ claude plugin marketplace add pchalasani/claude-code-tools
 
 ---
 
-<!-- Backward-compatible anchor stubs (Fix #11) -->
-
-<a id="quick-start"></a>
-## Quick Start
-See the [Quick Start](https://pchalasani.github.io/claude-code-tools/getting-started/) in the full documentation.
-
-<a id="claude-code-plugins"></a>
-## Claude Code Plugins
-See [Plugins](https://pchalasani.github.io/claude-code-tools/getting-started/plugins/) in the full documentation.
+> **Legacy links** — The sections below exist to
+> preserve links shared in earlier discussions.
+> For current documentation, visit the
+> [full docs site](https://pchalasani.github.io/claude-code-tools/).
 
 <a id="aichat-session-management"></a>
-## Why I built this
+## aichat — Session Management
 See [aichat](https://pchalasani.github.io/claude-code-tools/tools/aichat/) in the full documentation.
 
-<a id="resume-options"></a>
-## Resume Options
-See [Resume Options](https://pchalasani.github.io/claude-code-tools/tools/aichat/resume/) in the full documentation.
-
-<a id="aichat-search"></a>
-## aichat search -- Find and Select Sessions
-See [aichat search](https://pchalasani.github.io/claude-code-tools/tools/aichat/search/) in the full documentation.
-
-<a id="session-actions"></a>
-## Session Actions
-See [Session Actions](https://pchalasani.github.io/claude-code-tools/tools/aichat/actions/) in the full documentation.
-
-<a id="all-subcommands"></a>
-## All Subcommands
-See [All Subcommands](https://pchalasani.github.io/claude-code-tools/tools/aichat/actions/) in the full documentation.
-
 <a id="tmux-cli-terminal-automation"></a>
-## tmux-cli -- Terminal Automation
+## tmux-cli — Terminal Automation
 See [tmux-cli](https://pchalasani.github.io/claude-code-tools/tools/tmux-cli/) in the full documentation.
-
-<a id="tmux-cli-skill"></a>
-## tmux-cli Skill
-See [tmux-cli](https://pchalasani.github.io/claude-code-tools/tools/tmux-cli/) in the full documentation.
-
-<a id="lmsh-experimental"></a>
-## lmsh (Experimental)
-See [lmsh](https://pchalasani.github.io/claude-code-tools/tools/lmsh/) in the full documentation.
-
-<a id="status-line"></a>
-## Status Line
-See [Status Line](https://pchalasani.github.io/claude-code-tools/tools/statusline/) in the full documentation.
-
-<a id="vault"></a>
-## vault
-See [vault](https://pchalasani.github.io/claude-code-tools/tools/vault/) in the full documentation.
-
-<a id="env-safe"></a>
-## env-safe
-See [env-safe](https://pchalasani.github.io/claude-code-tools/tools/env-safe/) in the full documentation.
-
-<a id="claude-code-safety-hooks"></a>
-## Claude Code Safety Hooks
-See [Safety Hooks](https://pchalasani.github.io/claude-code-tools/plugins-detail/safety-hooks/) in the full documentation.
 
 <a id="voice"></a>
 ## Voice Plugin
 See [Voice](https://pchalasani.github.io/claude-code-tools/plugins-detail/voice/) in the full documentation.
-
-<a id="session-repair"></a>
-## Session Repair
-See [fix-session](https://pchalasani.github.io/claude-code-tools/tools/fix-session/) in the full documentation.
-
-<a id="using-claude-code-with-open-weight-anthropic-api-compatible-llm-providers"></a>
-## Using Claude Code with Open-weight LLM Providers
-See [Alternative LLM Providers](https://pchalasani.github.io/claude-code-tools/integrations/alt-llm-providers/) in the full documentation.
-
-<a id="google-docs-tools"></a>
-## Google Docs Tools
-See [Google Docs](https://pchalasani.github.io/claude-code-tools/integrations/google-docs/) in the full documentation.
-
-<a id="google-sheets-tools"></a>
-## Google Sheets Tools
-See [Google Sheets](https://pchalasani.github.io/claude-code-tools/integrations/google-sheets/) in the full documentation.
-
-<a id="development"></a>
-## Development
-See [Development](https://pchalasani.github.io/claude-code-tools/development/) in the full documentation.
 
 <a id="license"></a>
 ## License
