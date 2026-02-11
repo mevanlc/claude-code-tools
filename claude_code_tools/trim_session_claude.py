@@ -5,6 +5,23 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
 
+def _zero_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
+    """Zero out all numeric values in a usage dict.
+
+    Handles nested dicts (e.g. server_tool_use,
+    cache_creation) and preserves nulls.
+    """
+    result = {}
+    for k, v in usage.items():
+        if isinstance(v, dict):
+            result[k] = _zero_usage(v)
+        elif isinstance(v, (int, float)):
+            result[k] = 0
+        else:
+            result[k] = v
+    return result
+
+
 def build_tool_name_mapping(input_file: Path) -> Dict[str, str]:
     """
     Build a mapping of tool_use_id to tool name for Claude sessions.
@@ -216,22 +233,93 @@ def process_claude_session(
                 outfile.write(line)
                 continue
 
-            # Trim assistant messages if needed
-            if data.get("type") == "assistant" and line_num in assistant_indices_to_trim:
+            # Neutralize "context full" error markers - these indicate the parent
+            # session hit context limits. We keep the lines (to preserve UUID chain)
+            # but remove the error signals so Claude Code won't block resumption.
+            if data.get("error") == "invalid_request":
+                data["error"] = None
+            if data.get("isApiErrorMessage") is True:
+                data["isApiErrorMessage"] = False
+            msg = data.get("message", {})
+            if msg.get("model") == "<synthetic>":
+                # Replace synthetic error message with a note
+                msg["model"] = "trimmed"
+                if "content" in msg:
+                    msg["content"] = [{"type": "text", "text": "[Context limit reached in parent session - trimmed]"}]
+
+            # Zero out usage metadata so Claude Code doesn't
+            # think the context is still full from the parent
+            # session. Fresh usage will be populated by the API
+            # on the first successful request.
+            if isinstance(msg.get("usage"), dict):
+                msg["usage"] = _zero_usage(msg["usage"])
+
+            # Trim assistant messages
+            if data.get("type") == "assistant":
                 content = data.get("message", {}).get("content", [])
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        original_text = item.get("text", "")
-                        original_length = len(original_text)
-                        if original_length >= threshold:
-                            placeholder = (
-                                f"[Assistant message trimmed - "
-                                f"original content was {original_length:,} characters. "
-                                f"See line {line_num} of {parent_file} for full content]"
-                            )
-                            item["text"] = placeholder
-                            chars_saved += original_length - len(placeholder)
-                            num_assistant_trimmed += 1
+                if isinstance(content, list):
+                    for item in content:
+                        if not isinstance(item, dict):
+                            continue
+
+                        # Truncate tool_use input params
+                        # (Write/Edit calls carry full file
+                        # content in their input fields)
+                        if item.get("type") == "tool_use":
+                            tool_input = item.get("input")
+                            if isinstance(tool_input, dict):
+                                for k, v in tool_input.items():
+                                    if (
+                                        isinstance(v, str)
+                                        and len(v) >= threshold
+                                    ):
+                                        orig_len = len(v)
+                                        item["input"][k] = (
+                                            v[:threshold]
+                                            + f"\n\n[...truncated"
+                                            f" {k} - was"
+                                            f" {orig_len:,}"
+                                            f" chars. See"
+                                            f" line {line_num}"
+                                            f" of {parent_file}"
+                                            f"]"
+                                        )
+                                        saved = (
+                                            orig_len
+                                            - len(
+                                                item["input"][k]
+                                            )
+                                        )
+                                        if saved > 0:
+                                            chars_saved += saved
+                                            num_tools_trimmed += 1
+
+                        # Truncate text blocks (selected
+                        # messages only)
+                        elif (
+                            item.get("type") == "text"
+                            and line_num
+                            in assistant_indices_to_trim
+                        ):
+                            original_text = item.get("text", "")
+                            original_length = len(original_text)
+                            if original_length >= threshold:
+                                placeholder = (
+                                    f"[Assistant message"
+                                    f" trimmed - original"
+                                    f" content was"
+                                    f" {original_length:,}"
+                                    f" characters. See"
+                                    f" line {line_num} of"
+                                    f" {parent_file} for"
+                                    f" full content]"
+                                )
+                                item["text"] = placeholder
+                                chars_saved += (
+                                    original_length
+                                    - len(placeholder)
+                                )
+                                num_assistant_trimmed += 1
 
             # Check if this is a user message with tool results
             elif data.get("type") == "user":
@@ -271,43 +359,9 @@ def process_claude_session(
                                     num_tools_trimmed += 1
                                     chars_saved += saved
 
-                # Also suppress in toolUseResult.content if present
-                if (
-                    "toolUseResult" in data
-                    and isinstance(data["toolUseResult"], dict)
-                ):
-                    tool_result = data["toolUseResult"]
-                    if "content" in tool_result:
-                        # Find the tool_use_id from message content
-                        tool_use_id = None
-                        if isinstance(content, list):
-                            for item in content:
-                                if item.get("type") == "tool_result":
-                                    tool_use_id = item.get(
-                                        "tool_use_id"
-                                    )
-                                    break
-
-                        if tool_use_id:
-                            tool_name = tool_map.get(
-                                tool_use_id, "Unknown"
-                            )
-                            result_content = tool_result["content"]
-                            content_length = get_content_length(
-                                result_content
-                            )
-
-                            if content_length >= threshold and (
-                                target_tools is None
-                                or tool_name.lower() in target_tools
-                            ):
-                                truncated = truncate_content(
-                                    result_content, threshold, tool_name,
-                                    line_num=line_num, parent_file=parent_file
-                                )
-                                # Only update if truncation saves space
-                                if len(truncated) < content_length:
-                                    tool_result["content"] = truncated
+                # NOTE: toolUseResult is internal metadata for
+                # undo/display — NOT sent to the API. Leave it
+                # intact to avoid breaking Claude Code's UI.
 
             # Replace sessionId if new_session_id provided
             if new_session_id and "sessionId" in data:

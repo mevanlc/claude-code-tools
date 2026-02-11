@@ -128,6 +128,34 @@ llama-server --fim-qwen-30b-default --port 8127
 Downloads `ggml-org/Qwen3-Coder-30B-A3B-Instruct-Q8_0-GGUF` automatically on first
 run.
 
+### Qwen3-Coder-Next-80B-A3B (Newest SOTA Coder)
+
+The latest and most capable coding model from Qwen. 80B MoE with only 3B active
+parameters. Requires ~46GB RAM.
+
+```bash
+llama-server -hf unsloth/Qwen3-Coder-Next-GGUF:UD-Q4_K_XL \
+  --port 8130 \
+  -c 131072 \
+  -b 2048 \
+  -ub 1024 \
+  --parallel 1 \
+  -fa on \
+  --jinja \
+  --temp 1.0 \
+  --top-p 0.95 \
+  --top-k 40 \
+  --min-p 0.01
+```
+
+**Performance:** TBD (new model)
+
+**Quantization options:**
+
+| Quant | Size | Notes |
+|-------|------|-------|
+| UD-Q4_K_XL | ~46 GB | Recommended for 64GB systems |
+
 ### Qwen3-Next-80B-A3B (Better Long Context)
 
 Newer SOTA model. Slower generation but performance doesn't degrade as much
@@ -167,15 +195,70 @@ llama-server -hf unsloth/Nemotron-3-Nano-30B-A3B-GGUF:Q4_K_XL \
 - Tool calling: `temp=0.6`, `top_p=0.95`
 - Reasoning tasks: `temp=1.0`, `top_p=1.0`
 
+### GLM-4.7-Flash (Zhipu AI 30B-A3B MoE)
+
+A capable 30B MoE model from Zhipu AI. Requires a custom chat template.
+
+```bash
+llama-server -hf unsloth/GLM-4.7-Flash-GGUF:UD-Q4_K_XL \
+  --port 8129 \
+  -c 131072 \
+  -b 2048 \
+  -ub 1024 \
+  --parallel 1 \
+  -fa on \
+  --jinja \
+  --chat-template-file ~/Git/llama.cpp/models/templates/glm-4.jinja
+```
+
+For higher quality, use Q8_0 (~32GB, 20-40% slower):
+
+```bash
+llama-server -hf unsloth/GLM-4.7-Flash-GGUF:Q8_0 \
+  --port 8129 \
+  -c 131072 \
+  -b 2048 \
+  -ub 1024 \
+  --parallel 1 \
+  -fa on \
+  --jinja \
+  --chat-template-file ~/Git/llama.cpp/models/templates/glm-4.jinja
+```
+
+**Critical settings explained:**
+
+| Setting | Why |
+|---------|-----|
+| `--jinja` | Required for correct chat template |
+| `--chat-template-file` | Uses the GLM-4 specific template from llama.cpp |
+| `-fa on` | Enables flash attention for faster prompt processing |
+| `-b 2048` | Smaller batch size works better for this model |
+
+**Performance (M1 Max 64GB):**
+
+- Cold start (first question): ~14 seconds (processing full system prompt)
+- Cached follow-ups: ~4-5 seconds
+- Prompt eval: ~68-388 tok/s (varies with cache hits)
+- Generation: ~12-13 tok/s
+
+**Quantization options:**
+
+| Quant | Size | Notes |
+|-------|------|-------|
+| UD-Q4_K_XL | ~18 GB | Good balance, recommended |
+| Q8_0 | ~32 GB | Higher quality, 20-40% slower |
+
 ## Quick Reference
 
 | Model | Port | Command |
 |-------|------|---------|
-| GPT-OSS-20B | 8123 | `llama-server --gpt-oss-20b-default --port 8123|
+| GPT-OSS-20B | 8123 | `llama-server --gpt-oss-20b-default --port 8123` |
 | Qwen3-30B-A3B | 8124 | See full command above |
 | Nemotron-3-Nano | 8125 | See full command above |
 | Qwen3-Next-80B-A3B | 8126 | See full command above |
-| Qwen3-Coder-30B | 8127 | `llama-server --fim-qwen-30b-default --port 8127 |
+| Qwen3-Coder-30B | 8127 | `llama-server --fim-qwen-30b-default --port 8127` |
+| Qwen3-Coder-Next | 8130 | See full command above (~46GB RAM) |
+| GLM-4.7-Flash | 8129 | See full command above (requires chat template) |
 
 ## Usage
 
@@ -284,3 +367,67 @@ llama-server --fim-qwen-30b-default --port 8127
   `/v1/messages` (Anthropic format)
 - Both endpoints are served by llama-server simultaneously
 - The same model can serve both Claude Code and Codex at the same time
+
+---
+
+# Vision Models with Codex CLI
+
+Codex CLI supports image inputs (`-i`/`--image` flags), and llama-server can serve
+vision-language models like Qwen3-VL. This enables local multimodal inference.
+
+> **Note:** Vision only works via the OpenAI-compatible `/v1/chat/completions`
+> endpoint (Codex), not the Anthropic `/v1/messages` endpoint (Claude Code).
+
+## Qwen3-VL-30B-A3B Setup
+
+Vision models require two GGUF files: the main model + a multimodal projector
+(mmproj).
+
+**One-time setup** (download the mmproj file):
+
+```bash
+just qwen3-vl-download
+# Or manually:
+mkdir -p ~/models
+hf download Qwen/Qwen3-VL-30B-A3B-Instruct-GGUF \
+  mmproj-Qwen3-VL-30B-A3B-Instruct-f16.gguf \
+  --local-dir ~/models
+```
+
+**Start the server** (port 8128):
+
+```bash
+just qwen3-vl
+# Or manually:
+llama-server -hf Qwen/Qwen3-VL-30B-A3B-Instruct-GGUF:Q4_K_M \
+  --mmproj ~/models/mmproj-Qwen3-VL-30B-A3B-Instruct-f16.gguf \
+  --port 8128 \
+  -c 32768 \
+  -b 2048 \
+  -ub 2048 \
+  --parallel 1 \
+  --jinja
+```
+
+**Use with Codex:**
+
+First, add the provider to `~/.codex/config.toml`:
+
+```toml
+[model_providers.llama-8128]
+name = "Qwen3-VL Vision"
+base_url = "http://localhost:8128/v1"
+wire_api = "chat"
+```
+
+Then run Codex with an image:
+
+```bash
+codex --model qwen3-vl -c model_provider=llama-8128 -i screenshot.png "describe this"
+```
+
+## Quick Reference
+
+| Model | Port | Command |
+|-------|------|---------|
+| Qwen3-VL-30B-A3B | 8128 | `just qwen3-vl` (after `just qwen3-vl-download`) |

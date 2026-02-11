@@ -1,6 +1,6 @@
 [project]
 name = "claude-code-tools"
-version = "1.4.7"
+version = "1.10.3"
 description = "Collection of tools for working with Claude Code"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,7 @@ dev = ["commitizen>=3.0.0"]
 gdocs = [
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.0.0",
+    "Pillow>=10.0.0",
 ]
 
 [project.scripts]
@@ -35,6 +36,9 @@ tmux-cli = "claude_code_tools.tmux_cli_controller:main"
 env-safe = "claude_code_tools.env_safe:main"
 md2gdoc = "claude_code_tools.md2gdoc:main"
 gdoc2md = "claude_code_tools.gdoc2md:main"
+csv2gsheet = "claude_code_tools.csv2gsheet:main"
+gsheet2csv = "claude_code_tools.gsheet2csv:main"
+fix-session = "claude_code_tools.fix_session:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -79,7 +83,7 @@ markers = [
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "1.4.7"
+version = "1.10.3"
 tag_format = "v$version"
 version_files = [
     "pyproject.toml:version",

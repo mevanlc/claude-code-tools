@@ -7,7 +7,7 @@ This script provides functions to interact with CLI applications running in tmux
 import subprocess
 import time
 import re
-from typing import Optional, List, Dict, Tuple, Callable, Union
+from typing import Optional, List, Dict, Tuple, Callable, Union, Any
 import json
 import os
 import hashlib
@@ -294,6 +294,9 @@ class TmuxCLIController:
         else:
             base_cmd.append('-v')
 
+        # Get list of existing panes BEFORE creating new one (for verification)
+        existing_panes = {p['id'] for p in self.list_panes()}
+
         # Try -l first (tmux 3.4+), fall back to -p (older versions)
         # tmux 3.4 removed -p, but 3.5+ has both; older versions only have -p
         for size_flag in (['-l', f'{size}%'], ['-p', str(size)]) if size else [[]]:
@@ -308,8 +311,24 @@ class TmuxCLIController:
 
             # Validate: code must be 0 and output must be a valid pane ID (starts with %)
             if code == 0 and output and output.startswith('%'):
-                self.target_pane = output
-                return output
+                # Verify the pane actually exists by querying it
+                verify_output, verify_code = self._run_tmux_command(
+                    ['display-message', '-t', output, '-p', '#{pane_id}']
+                )
+                if verify_code == 0 and verify_output == output:
+                    self.target_pane = output
+                    return output
+
+                # Pane ID mismatch - find the actual new pane.
+                # This can occur when tmux reports a stale pane ID (e.g., from a
+                # recently killed pane) or during rapid pane creation/destruction.
+                current_panes = {p['id'] for p in self.list_panes()}
+                new_panes = current_panes - existing_panes
+                if new_panes:
+                    # Use min() for deterministic selection if multiple panes created
+                    actual_pane = min(new_panes)
+                    self.target_pane = actual_pane
+                    return actual_pane
 
         return None
     
@@ -331,43 +350,86 @@ class TmuxCLIController:
                     break
     
     def send_keys(self, text: str, pane_id: Optional[str] = None, enter: bool = True,
-                  delay_enter: Union[bool, float] = True):
+                  delay_enter: Union[bool, float] = True, verify_enter: bool = True,
+                  max_retries: int = 3):
         """
-        Send keystrokes to a pane.
-        
+        Send keystrokes to a pane with optional Enter key verification.
+
         Args:
             text: Text to send
             pane_id: Target pane (uses self.target_pane if not specified)
             enter: Whether to send Enter key after text
-            delay_enter: If True, use 1.0s delay; if float, use that delay in seconds (default: True)
+            delay_enter: If True, use 1.5s delay; if float, use that delay in seconds (default: True)
+            verify_enter: If True, verify Enter was received and retry if not (default: True)
+            max_retries: Maximum number of Enter key retries (default: 3)
         """
         target = pane_id or self.target_pane
         if not target:
             raise ValueError("No target pane specified")
-        
+
         if enter and delay_enter:
             # Send text without Enter first
             cmd = ['send-keys', '-t', target, text]
             self._run_tmux_command(cmd)
-            
+
             # Determine delay duration
             if isinstance(delay_enter, bool):
-                delay = 1.0  # Default delay
+                delay = 1.5  # Default delay
             else:
                 delay = float(delay_enter)
-            
+
             # Apply delay
             time.sleep(delay)
-            
-            # Then send just Enter
-            cmd = ['send-keys', '-t', target, 'Enter']
-            self._run_tmux_command(cmd)
+
+            # Capture pane state AFTER text is sent but BEFORE Enter
+            # This ensures we detect changes caused by Enter, not by the text itself
+            content_before_enter = self.capture_pane(target, lines=20) if verify_enter else None
+
+            # Send Enter with verification and retry logic
+            self._send_enter_with_retry(target, content_before_enter, verify_enter, max_retries)
         else:
-            # Original behavior
+            # Original behavior (no delay)
             cmd = ['send-keys', '-t', target, text]
             if enter:
                 cmd.append('Enter')
             self._run_tmux_command(cmd)
+
+    def _send_enter_with_retry(self, target: str, content_before_enter: Optional[str],
+                                verify: bool, max_retries: int):
+        """
+        Send Enter key with optional verification and retry.
+
+        Verifies that Enter was received by checking if pane content changed
+        (indicating command was submitted). Retries if content hasn't changed.
+
+        Args:
+            target: Target pane ID
+            content_before_enter: Pane content captured after text but before Enter
+            verify: Whether to verify Enter was received
+            max_retries: Maximum retry attempts
+        """
+        for attempt in range(max_retries):
+            # Send Enter
+            cmd = ['send-keys', '-t', target, 'Enter']
+            self._run_tmux_command(cmd)
+
+            if not verify or content_before_enter is None:
+                return  # No verification needed
+
+            # Wait a bit for the command to process
+            time.sleep(0.3)
+
+            # Check if pane content changed (indicating Enter was received)
+            content_after = self.capture_pane(target, lines=20)
+
+            if content_after != content_before_enter:
+                # Content changed - Enter was successful
+                return
+
+            # Content unchanged - Enter may not have been received
+            if attempt < max_retries - 1:
+                # Wait before retry (exponential backoff)
+                time.sleep(0.5 * (attempt + 1))
     
     def capture_pane(self, pane_id: Optional[str] = None, lines: Optional[int] = None) -> str:
         """
@@ -548,16 +610,62 @@ class TmuxCLIController:
     def clear_pane(self, pane_id: Optional[str] = None):
         """
         Clear the pane screen.
-        
+
         Args:
             pane_id: Target pane
         """
         target = pane_id or self.target_pane
         if not target:
             raise ValueError("No target pane specified")
-        
+
         self._run_tmux_command(['send-keys', '-t', target, 'C-l'])
-    
+
+    def execute(self, command: str, pane_id: Optional[str] = None, timeout: int = 30) -> Dict[str, Any]:
+        """
+        Execute a command and return output with exit code.
+
+        Uses unique markers to capture the command's exit status reliably.
+
+        Args:
+            command: Shell command to execute
+            pane_id: Target pane (uses self.target_pane if not specified)
+            timeout: Maximum seconds to wait for completion (default: 30)
+
+        Returns:
+            Dict with keys:
+                - output (str): Command output (stdout + stderr)
+                - exit_code (int): Command exit status, or -1 on timeout
+
+        Raises:
+            ValueError: If no target pane specified
+        """
+        from .tmux_execution_helpers import (
+            generate_execution_markers,
+            wrap_command_with_markers,
+            poll_for_completion,
+        )
+
+        target = pane_id or self.target_pane
+        if not target:
+            raise ValueError("No target pane specified")
+
+        # Generate unique markers for this execution
+        start_marker, end_marker = generate_execution_markers()
+
+        # Wrap command with markers
+        wrapped_command = wrap_command_with_markers(command, start_marker, end_marker)
+
+        # Send wrapped command to pane
+        self.send_keys(wrapped_command, pane_id=target, enter=True, delay_enter=False)
+
+        # Poll for completion with progressive expansion
+        return poll_for_completion(
+            capture_fn=lambda lines: self.capture_pane(pane_id=target, lines=lines),
+            start_marker=start_marker,
+            end_marker=end_marker,
+            timeout=timeout,
+        )
+
     def launch_cli(self, command: str, vertical: bool = True, size: int = 50) -> Optional[str]:
         """
         Convenience method to launch a CLI application in a new pane.
@@ -610,12 +718,27 @@ class CLI:
             if hasattr(self.controller, 'session_name'):
                 print(f"Remote session: {self.controller.session_name}")
             return
-            
-        # Get current location
-        session = self.controller.get_current_session()
-        window = self.controller.get_current_window()
-        pane_index = self.controller.get_current_pane_index()
-        
+
+        # Use TMUX_PANE to get location where this process is running,
+        # not the currently focused pane. This is consistent with where
+        # list_panes() and create_pane() operate.
+        tmux_pane = os.environ.get('TMUX_PANE')
+        if tmux_pane:
+            session, session_code = self.controller._run_tmux_command(
+                ['display-message', '-t', tmux_pane, '-p', '#{session_name}'])
+            window, window_code = self.controller._run_tmux_command(
+                ['display-message', '-t', tmux_pane, '-p', '#{window_name}'])
+            pane_index, pane_code = self.controller._run_tmux_command(
+                ['display-message', '-t', tmux_pane, '-p', '#{pane_index}'])
+            # If any command failed, fall back to None so the error message shows
+            if session_code != 0 or window_code != 0 or pane_code != 0:
+                session = window = pane_index = None
+        else:
+            # Fallback if TMUX_PANE not set
+            session = self.controller.get_current_session()
+            window = self.controller.get_current_window()
+            pane_index = self.controller.get_current_pane_index()
+
         if session and window and pane_index:
             print(f"Current location: {session}:{window}.{pane_index}")
         else:
@@ -659,12 +782,12 @@ class CLI:
     def send(self, text: str, pane: Optional[str] = None, enter: bool = True,
              delay_enter: Union[bool, float] = True):
         """Send text to a pane.
-        
+
         Args:
             text: Text to send
             pane: Target pane (session:window.pane, %id, or just index)
             enter: Whether to send Enter key after text
-            delay_enter: If True, use 1.0s delay; if float, use that delay in seconds (default: True)
+            delay_enter: If True, use 1.5s delay; if float, use that delay in seconds (default: True)
         """
         if self.mode == 'local':
             # Local mode - resolve pane identifier
@@ -698,7 +821,34 @@ class CLI:
             # Remote mode - pass pane_id directly
             content = self.controller.capture_pane(pane_id=pane, lines=lines)
         return content
-    
+
+    def execute(self, command: str, pane: Optional[str] = None, timeout: int = 30):
+        """Execute command and return structured output with exit code.
+
+        Args:
+            command: Shell command to execute
+            pane: Target pane identifier (session:window.pane, %id, or index)
+            timeout: Maximum seconds to wait (default: 30)
+        """
+        if self.mode == 'local':
+            # Local mode - resolve pane identifier
+            if pane:
+                resolved_pane = self.controller.resolve_pane_identifier(pane)
+                if not resolved_pane:
+                    print(f"Could not resolve pane identifier: {pane}")
+                    return
+            else:
+                resolved_pane = None
+
+            result = self.controller.execute(command, pane_id=resolved_pane, timeout=timeout)
+        else:
+            # Remote mode - pass pane directly
+            result = self.controller.execute(command, pane_id=pane, timeout=timeout)
+
+        # Print JSON for easy parsing
+        print(json.dumps(result, indent=2))
+        return result
+
     def interrupt(self, pane: Optional[str] = None):
         """Send Ctrl+C to a pane."""
         if self.mode == 'local':

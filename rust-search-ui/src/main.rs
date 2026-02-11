@@ -25,7 +25,8 @@ use ratatui::{
 };
 use serde::Serialize;
 use std::io::{self, stdout};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use std::process::Command;
 use std::collections::{HashMap, HashSet};
 use tantivy::{
     collector::TopDocs,
@@ -153,16 +154,20 @@ impl Session {
         format_time_ago(&self.modified)
     }
 
-    /// Session ID display with annotations: abc12345 (t) (r) (s)
-    /// For Codex, extracts UUID (last 36 chars) from session_id
-    fn session_id_display(&self) -> String {
-        // UUIDs are always 36 characters (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-        // For Codex, extract last 36 chars which is the UUID
-        let clean_id = if self.agent == "codex" && self.session_id.len() >= 36 {
+    /// Extract the clean UUID from session_id
+    /// For Claude: session_id is already the UUID
+    /// For Codex: session_id is "rollout-YYYY-MM-DDTHH-MM-SS-UUID", extract last 36 chars
+    fn clean_session_id(&self) -> &str {
+        if self.agent == "codex" && self.session_id.len() >= 36 {
             &self.session_id[self.session_id.len() - 36..]
         } else {
             &self.session_id
-        };
+        }
+    }
+
+    /// Session ID display with annotations: abc12345 (t) (r) (s)
+    fn session_id_display(&self) -> String {
+        let clean_id = self.clean_session_id();
 
         let id_prefix = if clean_id.len() >= 8 {
             &clean_id[..8]
@@ -310,6 +315,17 @@ impl Session {
 }
 
 // ============================================================================
+// Live Session State
+// ============================================================================
+
+/// Represents the state of a running CLI session process
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum ProcessState {
+    Running,  // R state - actively processing
+    Waiting,  // S state - waiting for user input
+}
+
+// ============================================================================
 // App State
 // ============================================================================
 
@@ -399,6 +415,21 @@ struct App {
 
     // Temporary status message (e.g., "Copied to clipboard")
     status_message: Option<String>,
+
+    // Live session tracking
+    live_sessions: HashMap<String, ProcessState>, // cwd -> ProcessState
+    include_live_only: bool,                      // Filter toggle for ! key
+    last_process_scan: Instant,                   // For auto-refresh timing
+
+    // Search debouncing - wait for typing to pause before searching
+    last_query_change: Option<Instant>,           // Timestamp of last keystroke in search
+    pending_filter: bool,                         // Whether filter() needs to run
+
+    // Cached column widths for rendering (updated when filter() runs, not every frame)
+    cached_max_session_id_len: usize,
+    cached_max_project_len: usize,
+    cached_max_branch_len: usize,
+    cached_max_lines_len: usize,
 }
 
 #[derive(Clone, PartialEq)]
@@ -424,6 +455,7 @@ enum FilterMenuItem {
     IncludeSub,
     IncludeTrimmed,
     IncludeContinued,  // Internally "continued", displayed as "rollover" to user
+    IncludeLive,       // Only show currently running sessions
     AgentAll,
     AgentClaude,
     AgentCodex,
@@ -440,6 +472,7 @@ impl FilterMenuItem {
             FilterMenuItem::IncludeSub,
             FilterMenuItem::IncludeTrimmed,
             FilterMenuItem::IncludeContinued,
+            FilterMenuItem::IncludeLive,
             FilterMenuItem::AgentAll,
             FilterMenuItem::AgentClaude,
             FilterMenuItem::AgentCodex,
@@ -456,6 +489,7 @@ impl FilterMenuItem {
             FilterMenuItem::IncludeSub => "(s) Include sub-agent sessions",
             FilterMenuItem::IncludeTrimmed => "(t) Include trimmed sessions",
             FilterMenuItem::IncludeContinued => "(r) Include rollover sessions",
+            FilterMenuItem::IncludeLive => "(!) Live sessions only",
             FilterMenuItem::AgentAll => "(a) All agents",
             FilterMenuItem::AgentClaude => "(d) Claude only",
             FilterMenuItem::AgentCodex => "(e) Codex only",
@@ -472,6 +506,7 @@ impl FilterMenuItem {
             FilterMenuItem::IncludeSub => 's',
             FilterMenuItem::IncludeTrimmed => 't',
             FilterMenuItem::IncludeContinued => 'r',
+            FilterMenuItem::IncludeLive => '!',
             FilterMenuItem::AgentAll => 'a',
             FilterMenuItem::AgentClaude => 'd',
             FilterMenuItem::AgentCodex => 'e',
@@ -679,6 +714,18 @@ impl App {
             confirming_delete: false,
             // Status message
             status_message: None,
+            // Live session tracking
+            live_sessions: scan_running_sessions(),
+            include_live_only: false,
+            last_process_scan: Instant::now(),
+            // Search debouncing
+            last_query_change: None,
+            pending_filter: false,
+            // Cached column widths (will be set by filter())
+            cached_max_session_id_len: 8,
+            cached_max_project_len: 10,
+            cached_max_branch_len: 8,
+            cached_max_lines_len: 4,
         };
         app.filter();
         app
@@ -777,6 +824,18 @@ impl App {
             confirming_delete: false,
             // Status message
             status_message: None,
+            // Live session tracking
+            live_sessions: scan_running_sessions(),
+            include_live_only: cli.include_live,
+            last_process_scan: Instant::now(),
+            // Search debouncing
+            last_query_change: None,
+            pending_filter: false,
+            // Cached column widths (will be set by filter())
+            cached_max_session_id_len: 8,
+            cached_max_project_len: 10,
+            cached_max_branch_len: 8,
+            cached_max_lines_len: 4,
         };
         app.filter();
 
@@ -796,6 +855,11 @@ impl App {
         }
 
         app
+    }
+
+    /// Get the live state of a session by looking up its UUID in live_sessions
+    fn get_session_live_state(&self, session: &Session) -> Option<ProcessState> {
+        self.live_sessions.get(session.clean_session_id()).copied()
     }
 
     fn filter(&mut self) {
@@ -959,9 +1023,34 @@ impl App {
             self.filtered.truncate(limit);
         }
 
+        // Filter to live sessions only if enabled
+        if self.include_live_only {
+            self.filtered.retain(|&idx| {
+                let s = &self.sessions[idx];
+                self.live_sessions.contains_key(s.clean_session_id())
+            });
+        }
+
         self.selected = 0;
         self.list_scroll = 0;
         self.preview_scroll = 0;
+
+        // Cache column widths for rendering (avoid recalculating on every frame)
+        self.cached_max_session_id_len = 8;
+        self.cached_max_project_len = 10;
+        self.cached_max_branch_len = 8;
+        self.cached_max_lines_len = 4;
+        for &idx in &self.filtered {
+            let s = &self.sessions[idx];
+            self.cached_max_session_id_len = self.cached_max_session_id_len.max(s.session_id_display().len());
+            self.cached_max_project_len = self.cached_max_project_len.max(s.project_name().len());
+            self.cached_max_branch_len = self.cached_max_branch_len.max(s.branch_display().len());
+            self.cached_max_lines_len = self.cached_max_lines_len.max(format!("{}L", s.lines).len());
+        }
+        // Apply reasonable limits
+        self.cached_max_session_id_len = self.cached_max_session_id_len.min(18);
+        self.cached_max_project_len = self.cached_max_project_len.min(40);
+        self.cached_max_branch_len = self.cached_max_branch_len.min(35);
     }
 
     fn selected_session(&self) -> Option<&Session> {
@@ -972,12 +1061,16 @@ impl App {
 
     fn on_char(&mut self, c: char) {
         self.query.push(c);
-        self.filter();
+        // Don't filter immediately - mark as pending for debounced execution
+        self.last_query_change = Some(Instant::now());
+        self.pending_filter = true;
     }
 
     fn on_backspace(&mut self) {
         self.query.pop();
-        self.filter();
+        // Don't filter immediately - mark as pending for debounced execution
+        self.last_query_change = Some(Instant::now());
+        self.pending_filter = true;
     }
 
     fn has_active_filters(&self) -> bool {
@@ -1565,6 +1658,7 @@ fn render_filter_modal(frame: &mut Frame, app: &App, t: &Theme, area: Rect) {
             FilterMenuItem::IncludeSub => if app.include_sub { " [ON]" } else { " [off]" }.to_string(),
             FilterMenuItem::IncludeTrimmed => if app.include_trimmed { " [ON]" } else { " [off]" }.to_string(),
             FilterMenuItem::IncludeContinued => if app.include_continued { " [ON]" } else { " [off]" }.to_string(),
+            FilterMenuItem::IncludeLive => if app.include_live_only { " [ON]" } else { " [off]" }.to_string(),
             FilterMenuItem::AgentAll => if app.filter_agent.is_none() { " ●" } else { " ○" }.to_string(),
             FilterMenuItem::AgentClaude => if app.filter_agent.as_deref() == Some("claude") { " ●" } else { " ○" }.to_string(),
             FilterMenuItem::AgentCodex => if app.filter_agent.as_deref() == Some("codex") { " ●" } else { " ○" }.to_string(),
@@ -1783,27 +1877,13 @@ fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) 
         return;
     }
 
-    // Calculate field widths based on max values
+    // Use cached column widths (calculated in filter(), not every frame)
     let row_num_width = app.filtered.len().to_string().len().max(2);
     let sep = " | ";
-
-    // Calculate max widths for each field - no artificial caps, show full names
-    let mut max_session_id_len = 0usize;
-    let mut max_project_len = 0usize;
-    let mut max_branch_len = 0usize;
-    let mut max_lines_len = 0usize;
-    for &idx in &app.filtered {
-        let s = &app.sessions[idx];
-        max_session_id_len = max_session_id_len.max(s.session_id_display().len());
-        max_project_len = max_project_len.max(s.project_name().len());
-        max_branch_len = max_branch_len.max(s.branch_display().len());
-        max_lines_len = max_lines_len.max(format!("{}L", s.lines).len());
-    }
-    // Ensure minimums and reasonable maximums
-    max_session_id_len = max_session_id_len.max(8).min(18);
-    max_project_len = max_project_len.max(10).min(40);
-    max_branch_len = max_branch_len.max(8).min(35);
-    max_lines_len = max_lines_len.max(4);
+    let max_session_id_len = app.cached_max_session_id_len;
+    let max_project_len = app.cached_max_project_len;
+    let max_branch_len = app.cached_max_branch_len;
+    let max_lines_len = app.cached_max_lines_len;
 
     // Calculate available width and determine date format
     // Fixed overhead: row_num + space + icon/agent (8) + 4 separators (12) + padding (2)
@@ -1870,6 +1950,19 @@ fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) 
                 ("■", "CDX")
             };
 
+            // Determine icon style based on live session state
+            let icon_style = if let Some(state) = app.get_session_live_state(s) {
+                match state {
+                    ProcessState::Running => Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::SLOW_BLINK),
+                    ProcessState::Waiting => Style::default()
+                        .fg(Color::Red),
+                }
+            } else {
+                Style::default().fg(source_color)
+            };
+
             // Format: row# [icon Agent] session_id | project | branch | lines | date
             let row_num_str = format!("{:>width$}", row_num, width = row_num_width);
             let session_display = format!("{:<width$}", s.session_id_display(), width = max_session_id_len);
@@ -1887,7 +1980,7 @@ fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) 
 
             let header_spans = vec![
                 Span::styled(format!("{} ", row_num_str), Style::default().fg(t.dim_fg)),
-                Span::styled(format!("{} {} ", agent_icon, agent_abbrev), Style::default().fg(source_color)),
+                Span::styled(format!("{} {} ", agent_icon, agent_abbrev), icon_style),
                 Span::styled(session_display, Style::default().fg(t.dim_fg)),
                 Span::styled(sep, sep_style),
                 Span::styled(project_padded, header_style),
@@ -2131,7 +2224,8 @@ fn render_status_bar(frame: &mut Frame, app: &App, t: &Theme, area: Rect, show_l
         || app.filter_min_lines.is_some()
         || app.filter_after_date.is_some()
         || app.filter_before_date.is_some()
-        || (!app.scope_global && app.filter_branch.is_some());
+        || (!app.scope_global && app.filter_branch.is_some())
+        || app.include_live_only;
 
     let needs_legend_row = show_legend || has_filters;
 
@@ -2265,6 +2359,10 @@ fn render_status_bar(frame: &mut Frame, app: &App, t: &Theme, area: Rect, show_l
             if let Some(ref branch) = app.filter_branch {
                 row3_spans.push(Span::styled(format!(" [⎇ {}]", branch), filter_active));
             }
+        }
+        // Live sessions filter
+        if app.include_live_only {
+            row3_spans.push(Span::styled(" [LIVE]", Style::default().fg(Color::Green)));
         }
 
         let legend_row = Paragraph::new(Line::from(row3_spans));
@@ -3135,6 +3233,303 @@ fn format_time_ago(modified: &str) -> String {
 }
 
 // ============================================================================
+// Live Session Detection
+// ============================================================================
+
+/// Information about running processes in a CWD, separated by agent type
+struct CwdProcesses {
+    claude_count: usize,
+    codex_count: usize,
+    best_state: ProcessState,
+}
+
+/// Scan for running claude/codex CLI processes and return a map of session_id -> ProcessState
+/// For each CWD with N processes, marks the N most recently modified sessions as live.
+fn scan_running_sessions() -> HashMap<String, ProcessState> {
+    let mut result = HashMap::new();
+
+    // Collect CWD -> process counts (separated by agent type)
+    let mut cwd_processes: HashMap<String, CwdProcesses> = HashMap::new();
+
+    // Run: ps -eo pid,stat,comm to get PID, status, and command
+    let ps_output = match Command::new("ps")
+        .args(["-eo", "pid,stat,comm"])
+        .output()
+    {
+        Ok(output) => output,
+        Err(_) => return result,
+    };
+
+    let ps_str = String::from_utf8_lossy(&ps_output.stdout);
+
+    // Parse ps output to find claude/codex processes
+    for line in ps_str.lines().skip(1) {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let pid = parts[0];
+        let stat = parts[1];
+        let comm = parts[2];
+
+        // Check if it's a claude or codex CLI process
+        // Be specific to avoid matching other tools (like aichat-search)
+        let comm_lower = comm.to_lowercase();
+        let is_claude = comm_lower == "claude" || comm_lower.ends_with("/claude");
+        let is_codex = comm_lower.contains("/codex/codex") || comm_lower == "codex";
+        if !is_claude && !is_codex {
+            continue;
+        }
+
+        // Skip stopped/suspended processes (T state)
+        if stat.starts_with('T') {
+            continue;
+        }
+
+        // Determine process state
+        let state = if stat.starts_with('R') {
+            ProcessState::Running
+        } else {
+            ProcessState::Waiting
+        };
+
+        // Get the CWD for this process
+        let cwd = get_process_cwd(pid);
+        if let Some(cwd_path) = cwd {
+            cwd_processes
+                .entry(cwd_path)
+                .and_modify(|existing| {
+                    if is_claude {
+                        existing.claude_count += 1;
+                    }
+                    if is_codex {
+                        existing.codex_count += 1;
+                    }
+                    if state == ProcessState::Running {
+                        existing.best_state = ProcessState::Running;
+                    }
+                })
+                .or_insert(CwdProcesses {
+                    claude_count: if is_claude { 1 } else { 0 },
+                    codex_count: if is_codex { 1 } else { 0 },
+                    best_state: state,
+                });
+        }
+    }
+
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return result,
+    };
+
+    // Process Claude sessions
+    let claude_projects_dir = home.join(".claude").join("projects");
+    for (cwd, procs) in &cwd_processes {
+        if cwd == "/" || procs.claude_count == 0 {
+            continue;
+        }
+
+        let encoded_path = encode_project_path(cwd);
+        let project_session_dir = claude_projects_dir.join(&encoded_path);
+
+        let mut sessions: Vec<(String, std::time::SystemTime)> = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&project_session_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
+                    if let Some(filename) = path.file_stem().and_then(|s| s.to_str()) {
+                        if filename.len() >= 32 && filename.contains('-') {
+                            if let Ok(metadata) = entry.metadata() {
+                                if let Ok(modified) = metadata.modified() {
+                                    sessions.push((filename.to_string(), modified));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        sessions.sort_by(|a, b| b.1.cmp(&a.1));
+        for (session_id, _) in sessions.into_iter().take(procs.claude_count) {
+            result.insert(session_id, procs.best_state);
+        }
+    }
+
+    // Process Codex sessions - they're organized by date, not CWD
+    // We need to find recent sessions and match them to CWDs
+    let codex_sessions_dir = home.join(".codex").join("sessions");
+    let mut codex_sessions: Vec<(String, String, std::time::SystemTime)> = Vec::new(); // (session_id, cwd, mtime)
+
+    // Scan recent years/months/days for Codex sessions
+    if let Ok(years) = std::fs::read_dir(&codex_sessions_dir) {
+        for year_entry in years.flatten() {
+            if !year_entry.path().is_dir() {
+                continue;
+            }
+            if let Ok(months) = std::fs::read_dir(year_entry.path()) {
+                for month_entry in months.flatten() {
+                    if !month_entry.path().is_dir() {
+                        continue;
+                    }
+                    if let Ok(days) = std::fs::read_dir(month_entry.path()) {
+                        for day_entry in days.flatten() {
+                            if !day_entry.path().is_dir() {
+                                continue;
+                            }
+                            if let Ok(sessions) = std::fs::read_dir(day_entry.path()) {
+                                for session_entry in sessions.flatten() {
+                                    let path = session_entry.path();
+                                    if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
+                                        if let Some(filename) = path.file_stem().and_then(|s| s.to_str()) {
+                                            // Extract UUID (last 36 chars) from filename
+                                            // Format: rollout-YYYY-MM-DDTHH-MM-SS-UUID
+                                            if filename.len() >= 36 {
+                                                let uuid = &filename[filename.len() - 36..];
+                                                // Read CWD from session_meta
+                                                if let Some(cwd) = read_codex_session_cwd(&path) {
+                                                    if let Ok(metadata) = session_entry.metadata() {
+                                                        if let Ok(modified) = metadata.modified() {
+                                                            codex_sessions.push((
+                                                                uuid.to_string(),
+                                                                cwd,
+                                                                modified,
+                                                            ));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Match Codex sessions to CWDs with running Codex processes
+    for (cwd, procs) in &cwd_processes {
+        if cwd == "/" || procs.codex_count == 0 {
+            continue;
+        }
+
+        // Filter to sessions matching this CWD, sort by mtime
+        let mut matching: Vec<_> = codex_sessions
+            .iter()
+            .filter(|(_, session_cwd, _)| session_cwd == cwd)
+            .collect();
+        matching.sort_by(|a, b| b.2.cmp(&a.2));
+
+        for (session_id, _, _) in matching.into_iter().take(procs.codex_count) {
+            result.insert(session_id.clone(), procs.best_state);
+        }
+    }
+
+    result
+}
+
+/// Read the CWD from a Codex session file's session_meta record
+fn read_codex_session_cwd(path: &std::path::Path) -> Option<String> {
+    let file = std::fs::File::open(path).ok()?;
+    let reader = std::io::BufReader::new(file);
+    use std::io::BufRead;
+
+    for line in reader.lines().take(10) {
+        // Check first few lines for session_meta
+        if let Ok(line) = line {
+            if line.contains("session_meta") {
+                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+                    return json
+                        .get("payload")
+                        .and_then(|p| p.get("cwd"))
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Parse ps etime format [[DD-]HH:]MM:SS to calculate process start time
+fn parse_etime_to_start_time(etime: &str, now: std::time::SystemTime) -> Option<std::time::SystemTime> {
+    let mut total_secs: u64 = 0;
+
+    // Handle DD-HH:MM:SS or HH:MM:SS or MM:SS
+    let time_part = if etime.contains('-') {
+        let parts: Vec<&str> = etime.splitn(2, '-').collect();
+        let days = parts[0].parse::<u64>().unwrap_or(0);
+        total_secs += days * 86400;
+        parts.get(1).copied().unwrap_or("")
+    } else {
+        etime
+    };
+
+    let time_parts: Vec<&str> = time_part.split(':').collect();
+    match time_parts.len() {
+        3 => {
+            // HH:MM:SS
+            total_secs += time_parts[0].parse::<u64>().unwrap_or(0) * 3600;
+            total_secs += time_parts[1].parse::<u64>().unwrap_or(0) * 60;
+            total_secs += time_parts[2].parse::<u64>().unwrap_or(0);
+        }
+        2 => {
+            // MM:SS
+            total_secs += time_parts[0].parse::<u64>().unwrap_or(0) * 60;
+            total_secs += time_parts[1].parse::<u64>().unwrap_or(0);
+        }
+        _ => return None,
+    }
+
+    now.checked_sub(std::time::Duration::from_secs(total_secs))
+}
+
+/// Encode a project path the way Claude does: replace '/' with '-'
+/// e.g., "/Users/foo/project" -> "-Users-foo-project"
+fn encode_project_path(path: &str) -> String {
+    path.replace('/', "-")
+}
+
+/// Get the current working directory of a process by PID
+fn get_process_cwd(pid: &str) -> Option<String> {
+    // Try lsof first (works on macOS and Linux)
+    let lsof_output = Command::new("lsof")
+        .args(["-p", pid, "-Fn"])
+        .output()
+        .ok()?;
+
+    let lsof_str = String::from_utf8_lossy(&lsof_output.stdout);
+
+    // lsof -Fn output format: lines starting with 'n' contain the path
+    // On macOS: 'fcwd' line followed by 'n' line (f = file descriptor type)
+    // On Linux: 'tcwd' line followed by 'n' line (t = type)
+    let mut found_cwd = false;
+    for line in lsof_str.lines() {
+        if line == "fcwd" || line == "tcwd" {
+            found_cwd = true;
+        } else if found_cwd && line.starts_with('n') {
+            return Some(line[1..].to_string());
+        } else if line.starts_with('f') || line.starts_with('t') {
+            found_cwd = false;
+        }
+    }
+
+    // Fallback for Linux: try reading /proc/<pid>/cwd
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(cwd) = std::fs::read_link(format!("/proc/{}/cwd", pid)) {
+            return Some(cwd.to_string_lossy().to_string());
+        }
+    }
+
+    None
+}
+
+// ============================================================================
 // Index Loading
 // ============================================================================
 
@@ -3954,6 +4349,8 @@ struct CliOptions {
     no_rollover: bool,
     // Additive flag: --sub-agent adds sub-agents to defaults
     include_sub: bool,
+    // Live sessions filter: --live shows only currently running sessions
+    include_live: bool,
     min_lines: Option<i64>,
     after_date: Option<String>,
     before_date: Option<String>,
@@ -4053,6 +4450,8 @@ fn parse_cli_args() -> CliOptions {
     let no_rollover = has_flag("--no-rollover");
     // Additive flag: --sub-agent adds sub-agents to defaults
     let include_sub = has_flag("--sub-agent");
+    // Live sessions filter: --live shows only currently running sessions
+    let include_live = has_flag("--live");
 
     let min_lines = get_arg_value("--min-lines")
         .and_then(|s| s.parse().ok());
@@ -4087,6 +4486,7 @@ fn parse_cli_args() -> CliOptions {
         no_trimmed,
         no_rollover,
         include_sub,
+        include_live,
         min_lines,
         after_date,
         before_date,
@@ -4163,6 +4563,10 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    const PROCESS_REFRESH_INTERVAL_MS: u128 = 2000; // Refresh live session state every 2 seconds
+
+    const SEARCH_DEBOUNCE_MS: u128 = 200;
+
     loop {
         terminal.draw(|f| render(f, &mut app))?;
 
@@ -4170,6 +4574,24 @@ fn main() -> Result<()> {
             break;
         }
 
+        // Check if we need to refresh live session state
+        let now = Instant::now();
+        if now.duration_since(app.last_process_scan).as_millis() >= PROCESS_REFRESH_INTERVAL_MS {
+            app.live_sessions = scan_running_sessions();
+            app.last_process_scan = now;
+        }
+
+        // Debounced search: run filter() after 200ms of no typing
+        if app.pending_filter {
+            if let Some(last_change) = app.last_query_change {
+                if Instant::now().duration_since(last_change).as_millis() >= SEARCH_DEBOUNCE_MS {
+                    app.filter();
+                    app.pending_filter = false;
+                }
+            }
+        }
+
+        // Drain all pending events (non-blocking)
         while event::poll(Duration::from_millis(0))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
@@ -4472,6 +4894,10 @@ fn main() -> Result<()> {
                                 }
                                 FilterMenuItem::IncludeContinued => {
                                     app.include_continued = !app.include_continued;
+                                    app.filter();
+                                }
+                                FilterMenuItem::IncludeLive => {
+                                    app.include_live_only = !app.include_live_only;
                                     app.filter();
                                 }
                                 FilterMenuItem::AgentAll => {
@@ -4843,7 +5269,8 @@ fn main() -> Result<()> {
             }
         }
 
-        std::thread::sleep(Duration::from_millis(16));
+        // Sleep briefly - short enough to check for debounce timer and live session updates
+        std::thread::sleep(Duration::from_millis(50));
     }
 
     disable_raw_mode()?;

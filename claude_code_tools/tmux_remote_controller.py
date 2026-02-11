@@ -11,7 +11,7 @@ Enables tmux-cli to work when run outside of tmux by:
 import subprocess
 import time
 import hashlib
-from typing import Optional, List, Dict, Tuple, Union
+from typing import Optional, List, Dict, Tuple, Union, Any
 
 
 class RemoteTmuxController:
@@ -130,8 +130,18 @@ class RemoteTmuxController:
         return None
     
     def send_keys(self, text: str, pane_id: Optional[str] = None, enter: bool = True,
-                  delay_enter: Union[bool, float] = True):
-        """Send keys to the active pane of a given window (or last target)."""
+                  delay_enter: Union[bool, float] = True, verify_enter: bool = True,
+                  max_retries: int = 3):
+        """Send keys to the active pane of a given window (or last target).
+
+        Args:
+            text: Text to send
+            pane_id: Target pane/window
+            enter: Whether to send Enter key after text
+            delay_enter: If True, use 1.5s delay; if float, use that delay in seconds
+            verify_enter: If True, verify Enter was received and retry if not
+            max_retries: Maximum number of Enter key retries
+        """
         if not text:
             return
         target = self._active_pane_in_window(self._window_target(pane_id))
@@ -139,15 +149,50 @@ class RemoteTmuxController:
             # First send text (no Enter)
             self._run_tmux(['send-keys', '-t', target, text])
             # Delay
-            delay = 1.0 if isinstance(delay_enter, bool) else float(delay_enter)
+            delay = 1.5 if isinstance(delay_enter, bool) else float(delay_enter)
             time.sleep(delay)
-            # Then Enter
-            self._run_tmux(['send-keys', '-t', target, 'Enter'])
+            # Capture pane state AFTER text is sent but BEFORE Enter
+            # This ensures we detect changes caused by Enter, not by the text itself
+            content_before_enter = self.capture_pane(pane_id, lines=20) if verify_enter else None
+            # Send Enter with verification and retry
+            self._send_enter_with_retry(target, pane_id, content_before_enter, verify_enter, max_retries)
         else:
             args = ['send-keys', '-t', target, text]
             if enter:
                 args.append('Enter')
             self._run_tmux(args)
+
+    def _send_enter_with_retry(self, target: str, pane_id: Optional[str],
+                                content_before_enter: Optional[str], verify: bool,
+                                max_retries: int):
+        """Send Enter key with optional verification and retry.
+
+        Args:
+            target: Resolved tmux target
+            pane_id: Original pane_id for capture_pane
+            content_before_enter: Pane content captured after text but before Enter
+            verify: Whether to verify Enter was received
+            max_retries: Maximum retry attempts
+        """
+        for attempt in range(max_retries):
+            # Send Enter
+            self._run_tmux(['send-keys', '-t', target, 'Enter'])
+
+            if not verify or content_before_enter is None:
+                return
+
+            # Wait a bit for the command to process
+            time.sleep(0.3)
+
+            # Check if pane content changed
+            content_after = self.capture_pane(pane_id, lines=20)
+
+            if content_after != content_before_enter:
+                return  # Enter was successful
+
+            # Content unchanged - retry with exponential backoff
+            if attempt < max_retries - 1:
+                time.sleep(0.5 * (attempt + 1))
     
     def capture_pane(self, pane_id: Optional[str] = None, lines: Optional[int] = None) -> str:
         """Capture output from the active pane of a window."""
@@ -185,7 +230,46 @@ class RemoteTmuxController:
     def send_escape(self, pane_id: Optional[str] = None):
         target = self._active_pane_in_window(self._window_target(pane_id))
         self._run_tmux(['send-keys', '-t', target, 'Escape'])
-    
+
+    def execute(self, command: str, pane_id: Optional[str] = None, timeout: int = 30) -> Dict[str, Any]:
+        """
+        Execute a command and return output with exit code.
+
+        Uses unique markers to capture the command's exit status reliably.
+
+        Args:
+            command: Shell command to execute
+            pane_id: Target window/pane (uses self.target_window if not specified)
+            timeout: Maximum seconds to wait for completion (default: 30)
+
+        Returns:
+            Dict with keys:
+                - output (str): Command output (stdout + stderr)
+                - exit_code (int): Command exit status, or -1 on timeout
+        """
+        from .tmux_execution_helpers import (
+            generate_execution_markers,
+            wrap_command_with_markers,
+            poll_for_completion,
+        )
+
+        # Generate unique markers for this execution
+        start_marker, end_marker = generate_execution_markers()
+
+        # Wrap command with markers
+        wrapped_command = wrap_command_with_markers(command, start_marker, end_marker)
+
+        # Send wrapped command to pane
+        self.send_keys(wrapped_command, pane_id=pane_id, enter=True, delay_enter=False)
+
+        # Poll for completion with progressive expansion
+        return poll_for_completion(
+            capture_fn=lambda lines: self.capture_pane(pane_id=pane_id, lines=lines),
+            start_marker=start_marker,
+            end_marker=end_marker,
+            timeout=timeout,
+        )
+
     def kill_window(self, window_id: Optional[str] = None):
         target = self._window_target(window_id)
         # Ensure the target refers to a window (not a %pane id)

@@ -71,8 +71,25 @@ CLI commands, skills, agents, hooks, plugins. Click on a card below to navigate.
 </a>
 </td>
 <td align="center">
+<a href="#google-sheets-tools">
+<img src="assets/card-gsheets.svg" alt="gsheets" width="200"/>
+</a>
+</td>
+</tr>
+<tr>
+<td align="center">
 <a href="#using-claude-code-with-open-weight-anthropic-api-compatible-llm-providers">
 <img src="assets/card-alt.svg" alt="alt" width="200"/>
+</a>
+</td>
+<td align="center">
+<a href="#voice">
+<img src="assets/card-voice.svg" alt="voice" width="200"/>
+</a>
+</td>
+<td align="center">
+<a href="#session-repair">
+<img src="assets/card-session-repair.svg" alt="session repair" width="200"/>
 </a>
 </td>
 </tr>
@@ -120,12 +137,13 @@ Without `aichat-search`, search won't work, but other `aichat` commands (resume,
 
 ### What You Get
 
-Four commands are installed:
+Five commands are installed:
 
 | Command | Description |
 |---------|-------------|
 | [`aichat`](#aichat-session-management) | Continue work with session lineage and truncation, avoiding compaction;<br>fast (Rust/Tantivy) full-text session search TUI for humans, CLI for agents  |
 | [`tmux-cli`](#tmux-cli-terminal-automation) | Terminal automation for AI agents ("Playwright for terminals") |
+| [`fix-session`](#session-repair) | Detect and repair broken conversation chains in Claude Code sessions |
 | [`vault`](#vault) | Encrypted .env backup and sync |
 | [`env-safe`](#env-safe) | Safe .env inspection without exposing values |
 
@@ -145,6 +163,8 @@ This repo also provides plugins for the
 | `tmux-cli` | Terminal automation skill for interacting with other tmux panes |
 | `workflow` | Work logging, code walk-through, issue specs, UI testing |
 | `safety-hooks` | Prevent destructive git/docker/rm commands |
+| `langroid` | Design patterns for the [Langroid](https://github.com/langroid/langroid) multi-agent LLM framework |
+| `voice` | Spoken audio summaries when agent stops; uses [pocket-tts](https://github.com/kyutai-labs/pocket-tts) |
 
 **Install the plugins:**
 
@@ -163,12 +183,16 @@ claude plugin install "aichat@cctools-plugins"
 claude plugin install "tmux-cli@cctools-plugins"
 claude plugin install "workflow@cctools-plugins"
 claude plugin install "safety-hooks@cctools-plugins"
+claude plugin install "langroid@cctools-plugins"
+claude plugin install "voice@cctools-plugins"
 
 # Or in-session
 /plugin install aichat@cctools-plugins
 /plugin install tmux-cli@cctools-plugins
 /plugin install workflow@cctools-plugins
 /plugin install safety-hooks@cctools-plugins
+/plugin install langroid@cctools-plugins
+/plugin install voice@cctools-plugins
 ```
 
 You can also use `/plugin` without arguments to launch a TUI for browsing and installing.
@@ -181,7 +205,8 @@ The `aichat` plugin provides:
 
 | Type | Name | What it does |
 |------|------|--------------|
-| Hook | `>resume` | Type `>resume` (or `>continue`, `>handoff`) to trigger session handoff flow |
+| Hook | `>resume` | Type `>resume` (or `>continue`, `>handoff`) to copy session ID + show resume instructions |
+| Hook | `>session` | Type `>session` (or `>session-id`) to copy session ID to clipboard |
 | Skill | `/session-search` | Search past sessions (for agents without sub-agent support, e.g. Codex) |
 | Skill | `/recover-context` | Extract context from parent sessions into current conversation |
 | Agent | `session-searcher` | Sub-agent to search/retrieve context from past sessions |
@@ -217,6 +242,20 @@ The `workflow` plugin provides:
 | `/log-work` | Log work progress to `WORKLOG/YYYYMMDD.md` |
 | `/make-issue-spec` | Create task specs at `issues/YYYYMMDD-topic.md` |
 | `ui-tester` agent | Browser-based UI testing via Chrome DevTools MCP |
+
+#### Langroid Plugin Details
+
+The `langroid` plugin provides design pattern knowledge for the
+[Langroid](https://github.com/langroid/langroid) multi-agent LLM framework:
+
+| Skill | What it does |
+|-------|--------------|
+| `/patterns` | Index of Langroid design patterns (agent config, tools, task control, MCP integration) |
+| `/add-pattern` | Record new patterns as you learn them from the Langroid codebase |
+
+#### Voice Plugin Details
+
+See the [Voice Plugin](#voice) section below for details.
 
 </details>
 
@@ -295,6 +334,7 @@ The above session resumption methods are useful to continue your work from the
 Codex-CLI, with a pleasant self-explanatory TUI for humans, and a CLI mode for Agents
 to find past work. (The Rust/Tantivy-based search and TUI was inspired by the excellent
 TUI in the [zippoxer/recall](https://github.com/zippoxer/recall) repo).
+See also [clicodelog](https://github.com/monk1337/clicodelog) for a browsable HTML view of sessions across Claude Code, Gemini CLI, and Codex CLI.
 
 Users can launch the search TUI using [`aichat search ...`](#aichat-search--find-and-select-sessions) and (sub-)
 [agents can run](#agent-access-to-history-the-session-searcher-sub-agent)
@@ -393,7 +433,7 @@ aichat resume                # Auto-find latest for this project
 > [!TIP]
 > It's highly recommended to turn off auto-compaction when using `aichat resume`.
 > - **Claude Code:** Use the `/config` command to disable auto-compaction
-> - **Codex CLI:** Set `model_auto_compact_token_limit = 0` in `~/.codex/config.toml`
+> - **Codex CLI:** Set `model_auto_compact_token_limit = 400000` in `~/.codex/config.toml`
 
 When you access the resume menu using any of the above 3 mechanisms, you will
 be presented with 3 resume strategies, as described below.
@@ -601,6 +641,7 @@ Installing the `aichat` plugin mentioned above provides two ways to search past 
 | `aichat info [session]` | Show session metadata, path, and lineage |
 | `aichat export [session]` | Export session to text |
 | `aichat copy [session]` | Copy session file to new location |
+| `aichat move <session> <new-project>` | Move session to a different project directory |
 | `aichat query [session] [question]` | Query session with AI |
 | `aichat clone [session]` | Clone session and resume the clone |
 | `aichat rollover [session]` | Hand off to fresh session with lineage |
@@ -650,9 +691,30 @@ everything automatically—just describe what you want.
 Vanilla tmux can do everything tmux-cli does. The problem is that LLMs frequently make
 mistakes with raw tmux: forgetting the Enter key, not adding delays between text and
 Enter (causing race conditions with fast CLI apps), or incorrect escaping. `tmux-cli`
-bakes in defaults that address these: Enter is sent automatically with a 1-second delay
+bakes in defaults that address these: Enter is sent automatically with a 1.5-second delay
 (configurable), pane targeting accepts simple numbers instead of `session:window.pane`,
-and there's built-in `wait_idle` to detect when a CLI is ready for input.
+built-in `wait_idle` to detect when a CLI is ready for input, and **Enter key verification
+with automatic retry** to handle intermittent failures.
+
+> **Important: Instruct your AI agent to use `tmux-cli` instead of plain `tmux`**
+>
+> Add this directive to your project's `CLAUDE.md` or agent instructions:
+>
+> ```markdown
+> When interacting with tmux panes, ALWAYS use `tmux-cli send` instead of plain
+> `tmux send-keys`. Plain tmux commands are unreliable because they send text and
+> Enter simultaneously without any delay, causing race conditions where the Enter
+> key is lost before the target application can process the text input.
+> ```
+>
+> **Why plain tmux is unreliable:** When you run `tmux send-keys "text" Enter`, both
+> the text and Enter key are sent in rapid succession. If the target shell or application
+> hasn't fully processed the text input buffer, the Enter key can be lost. This is
+> especially common during shell initialization, with slow terminal emulators, or under
+> system load. `tmux-cli` addresses this by:
+> 1. Sending text first, then waiting 1.5 seconds before sending Enter
+> 2. Verifying the Enter was received by checking if pane content changed
+> 3. Automatically retrying the Enter key (up to 3 times) if verification fails
 
 ## Tmux-cli skill
 
@@ -847,6 +909,165 @@ Install the `safety-hooks` plugin as described in
 
 For complete documentation, see [hooks/README.md](hooks/README.md).
 
+<a id="voice"></a>
+# 🔊 Voice Plugin
+
+Get spoken audio feedback when Claude Code completes a task. The agent
+automatically speaks a 1-2 sentence summary before stopping, so you can
+multitask while Claude works.
+
+### Prerequisites
+
+- **UV** - Required for running pocket-tts. Install via:
+  `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- **FFmpeg** (recommended) - Enables streaming audio for lower latency. Install
+  via `brew install ffmpeg` (macOS) or `sudo apt install ffmpeg` (Linux)
+
+### How It Works
+
+The plugin uses [pocket-tts](https://github.com/kyutai-labs/pocket-tts), a
+lightweight text-to-speech library. On first use, it automatically:
+
+1. Starts a pocket-tts server (via `uvx pocket-tts serve`)
+2. Downloads the voice model (~50MB, one-time)
+
+The server persists in the background (via `nohup`) so subsequent requests
+are instant. Server logs are written to `/tmp/pocket-tts-server.log`.
+
+To stop the server manually (works on both macOS and Linux):
+
+```bash
+pkill -f "pocket-tts serve"
+```
+
+### Installation
+
+```bash
+# Add the marketplace (if not already added)
+claude plugin marketplace add pchalasani/claude-code-tools
+
+# Install the plugin
+claude plugin install voice@cctools-plugins
+```
+
+### Usage
+
+Once installed, the plugin works automatically:
+
+- **Automatic feedback**: When the agent finishes a task, it speaks a summary
+  before stopping
+- **Explicit requests**: Ask Claude to "use your voice" and it will speak
+  its response
+
+### Configuration
+
+Use the `/voice:speak` command to configure:
+
+```bash
+/voice:speak                  # Enable voice feedback with current voice
+/voice:speak alba             # Set voice to "alba" and enable feedback
+/voice:speak azure            # Set voice to "azure" and enable
+/voice:speak stop             # Disable voice feedback
+/voice:speak prompt <text>    # Set custom instruction for summaries
+/voice:speak prompt           # Clear custom prompt
+```
+
+**Custom prompts** let you personalize how summaries are delivered:
+
+```bash
+/voice:speak prompt "be upbeat and encouraging"
+/voice:speak prompt "always end with 'back to you, boss'"
+```
+
+See the [pocket-tts repo](https://github.com/kyutai-labs/pocket-tts) for the
+latest available voices.
+
+### Recommended: Speech-to-Text Companion
+
+For a complete voice workflow, pair this TTS plugin with
+[Handy](https://github.com/cjpais/Handy) (open-source) using the **Parakeet V3**
+model for speech-to-text. It's stunningly fast with near-instant transcription.
+
+The slight accuracy drop compared to larger models is immaterial when talking to
+an AI. **Pro tip**: Ask the agent to restate what it understood — this confirms
+understanding and helps keep the CLI agent on track.
+
+### Architecture
+
+The plugin uses a multi-hook strategy for fast, reliable voice summaries:
+
+- **UserPromptSubmit hook**: Silently injects voice instructions each turn,
+  telling Claude to end longer responses with a `📢` spoken summary marker
+- **PostToolUse hook**: Brief reminder after each tool call to keep instructions
+  fresh during long tool chains
+- **Stop hook**: Extracts the `📢` marker instantly (no API call), or falls back
+  to headless Claude summarization only if the agent forgot
+
+This ensures:
+
+- **Fast feedback**: Most summaries are instant (marker extraction, no API call)
+- **Reliable**: Headless Claude fallback catches cases where agent forgets
+- **Silent operation**: Hooks use `additionalContext` for noise-free injection
+- **Tone matching**: Summaries match user's style (casual, colorful, etc.)
+
+<a id="session-repair"></a>
+# 🔧 fix-session — Session Chain Repair
+
+Claude Code has a
+[known bug](https://github.com/anthropics/claude-code/issues/22107)
+where progress/subagent UUIDs contaminate the conversation chain,
+creating orphan `parentUuid` references. When you resume a broken
+session, Claude only sees the messages after the break — losing
+all prior context.
+
+`fix-session` detects and repairs these broken chains.
+This tool is specific to Claude Code sessions (not Codex CLI).
+
+### Usage
+
+```bash
+# Analyze a session (dry run) — accepts partial session IDs
+fix-session f8ddc
+
+# Fix in place (creates .bak backup before modifying)
+fix-session f8ddc --fix --in-place
+
+# Fix and write to a new file
+fix-session f8ddc --fix --output fixed.jsonl
+
+# Verbose output showing orphan details
+fix-session f8ddc --verbose
+```
+
+### How It Works
+
+1. Loads the session JSONL and identifies conversation entries
+   (user, assistant, system, summary)
+2. Finds entries whose `parentUuid` points to a non-conversation
+   entry (e.g., a progress or subagent message) — these are
+   "orphans"
+3. Relinks each orphan to the previous conversation entry in
+   file order, restoring the chain
+4. Verifies the fix by walking the chain from end to start
+
+A healthy session produces no output and exits immediately.
+
+### Programmatic API
+
+```python
+from pathlib import Path
+from claude_code_tools.fix_session import check_and_fix_session
+
+# Returns True if fixes were needed, False if healthy
+fixed = check_and_fix_session(Path("session.jsonl"))
+```
+
+`check_and_fix_session()` auto-fixes in place (creating a `.bak`
+backup) and prints a one-line summary. It's designed to be called
+before resuming a session.
+
+---
+
 <a id="using-claude-code-with-open-weight-anthropic-api-compatible-llm-providers"></a>
 ## 🤖 Using Claude Code with Open-weight Anthropic API-compatible LLM Providers
 
@@ -952,6 +1173,7 @@ uv tool install 'claude-code-tools[gdocs]'
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create/select a project and enable the **Google Drive API**
+   and the **Google Docs API**
 3. Go to **APIs & Services** → **Credentials** → **Create Credentials** →
    **OAuth client ID**
 4. Choose **Desktop app**, then download the JSON file
@@ -979,9 +1201,18 @@ If a file with the same name exists, `--on-existing` controls behavior:
 
 Features:
 
-- Native markdown conversion (same quality as manual upload + "Open in Docs")
+- Native markdown conversion (same quality as manual
+  upload + "Open in Docs")
+- **Image upload**: local images referenced in markdown
+  (e.g., `![alt](diagram.png)`) are uploaded to Drive
+  at full resolution, then inserted into the Google Doc
+  via the Docs API with proper sizing to fit the page
+- `--max-image-width` controls display width in inches
+  (default: 6.5 = full page width)
+- `--no-images` skips image processing entirely
 - Follows Drive shortcuts to shared folders
-- Conflict detection with version suffix or overwrite options
+- Conflict detection with version suffix or overwrite
+  options
 - Creates folders if they don't exist
 
 ### gdoc2md — Google Docs to Markdown
@@ -994,6 +1225,43 @@ gdoc2md "My Document" --folder "PNL/Reports" # Download from folder
 gdoc2md "My Document" -o report.md           # Save with custom name
 gdoc2md --list --folder PNL                  # List docs in folder
 ```
+
+By default, embedded images are extracted to local files
+(e.g., `report_001.png`, `report_002.png`) alongside the
+markdown, with references rewritten to use local paths:
+
+- Default: extract images to files
+- `--no-images`: strip images to placeholders
+- `--keep-base64`: keep base64 data inline
+
+<a id="google-sheets-tools"></a>
+## 📊 Google Sheets Tools (csv2gsheet, gsheet2csv)
+
+Upload CSV files to Google Sheets and download Sheets as CSV. Uses the same
+OAuth credentials as md2gdoc/gdoc2md (see setup above).
+
+### csv2gsheet — CSV to Google Sheets
+
+```bash
+csv2gsheet data.csv                          # Upload to root
+csv2gsheet data.csv --folder "Reports/Data"  # Upload to folder
+csv2gsheet data.csv --name "Q4 Sales"        # Custom name
+csv2gsheet data.csv --on-existing overwrite  # Overwrite if exists
+```
+
+### gsheet2csv — Google Sheets to CSV
+
+```bash
+gsheet2csv "My Spreadsheet"                      # Download from root
+gsheet2csv "My Spreadsheet" --folder "Reports"   # From folder
+gsheet2csv "My Spreadsheet" -o data.csv          # Custom output name
+gsheet2csv "My Spreadsheet" --sheet "Sheet2"     # Specific tab
+gsheet2csv --list --folder Reports               # List spreadsheets
+gsheet2csv "My Spreadsheet" --list-tabs          # List tabs
+```
+
+For multi-tab spreadsheets, use `--sheet` to export a specific tab (default
+exports first tab).
 
 <a id="development"></a>
 ## 🛠️ Development
