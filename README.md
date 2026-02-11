@@ -8,8 +8,35 @@ and similar CLI coding agents.
 
 **[Full Documentation](https://pchalasani.github.io/claude-code-tools/)**
 
+### Install
+
 ```bash
+# Core package
 uv tool install claude-code-tools
+
+# With Google Docs/Sheets extras
+uv tool install "claude-code-tools[gdocs]"
+
+# Upgrade an existing installation
+uv tool install --force claude-code-tools
+```
+
+The search engine (`aichat search`) requires a
+separate Rust binary:
+
+- **Homebrew** (macOS/Linux):
+  `brew install pchalasani/tap/aichat-search`
+- **Cargo**: `cargo install aichat-search`
+- **Pre-built binary**:
+  [Releases](https://github.com/pchalasani/claude-code-tools/releases)
+  (look for `rust-v*`)
+
+Install the Claude Code
+[plugins](https://pchalasani.github.io/claude-code-tools/getting-started/plugins/)
+for hooks, skills, and agents:
+
+```bash
+claude plugin marketplace add pchalasani/claude-code-tools
 ```
 
 <div align="center">
