@@ -32,7 +32,7 @@ jobs:
           cache-dependency-path: docs-site/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         working-directory: docs-site
 
       - name: Build
