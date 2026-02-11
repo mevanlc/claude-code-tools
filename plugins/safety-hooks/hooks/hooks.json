@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/bash_hook.py\" && python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/bash_hook.py\" || echo \"{\\\"decision\\\":\\\"approve\\\"}\"'",
+            "command": "bash -c 'if test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/bash_hook.py\"; then python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/bash_hook.py\"; else echo \"{\\\"decision\\\":\\\"approve\\\"}\"; fi'",
             "timeout": 10
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/file_length_limit_hook.py\" && python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/file_length_limit_hook.py\" || echo \"{\\\"decision\\\":\\\"approve\\\"}\"'",
+            "command": "bash -c 'if test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/file_length_limit_hook.py\"; then python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/file_length_limit_hook.py\"; else echo \"{\\\"decision\\\":\\\"approve\\\"}\"; fi'",
             "timeout": 10
           }
         ]
@@ -27,7 +27,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/file_length_limit_hook.py\" && python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/file_length_limit_hook.py\" || echo \"{\\\"decision\\\":\\\"approve\\\"}\"'",
+            "command": "bash -c 'if test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/file_length_limit_hook.py\"; then python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/file_length_limit_hook.py\"; else echo \"{\\\"decision\\\":\\\"approve\\\"}\"; fi'",
             "timeout": 10
           }
         ]
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/read_env_protection_hook.py\" && python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/read_env_protection_hook.py\" || echo \"{\\\"decision\\\":\\\"approve\\\"}\"'",
+            "command": "bash -c 'if test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/read_env_protection_hook.py\"; then python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/read_env_protection_hook.py\"; else echo \"{\\\"decision\\\":\\\"approve\\\"}\"; fi'",
             "timeout": 10
           }
         ]
