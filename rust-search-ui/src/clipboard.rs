@@ -1,13 +1,14 @@
 //! Cross-platform clipboard abstraction with Termux support.
 //!
-//! On Termux, uses `termux-clipboard-set` and `termux-clipboard-get` commands.
+//! On Android/Termux (or with the `termux` feature), uses
+//! `termux-clipboard-set` and `termux-clipboard-get` commands.
 //! On other platforms, uses the `arboard` crate.
 
 use anyhow::Result;
 
 /// Set text to the clipboard.
 pub fn set_text(text: &str) -> Result<()> {
-    #[cfg(feature = "termux")]
+    #[cfg(any(feature = "termux", target_os = "android"))]
     {
         use std::io::Write;
         use std::process::{Command, Stdio};
@@ -28,7 +29,7 @@ pub fn set_text(text: &str) -> Result<()> {
         }
     }
 
-    #[cfg(not(feature = "termux"))]
+    #[cfg(all(not(feature = "termux"), not(target_os = "android")))]
     {
         let mut clipboard = arboard::Clipboard::new()?;
         clipboard.set_text(text)?;
@@ -39,7 +40,7 @@ pub fn set_text(text: &str) -> Result<()> {
 /// Get text from the clipboard.
 #[allow(dead_code)]
 pub fn get_text() -> Result<String> {
-    #[cfg(feature = "termux")]
+    #[cfg(any(feature = "termux", target_os = "android"))]
     {
         use std::process::Command;
 
@@ -52,7 +53,7 @@ pub fn get_text() -> Result<String> {
         }
     }
 
-    #[cfg(not(feature = "termux"))]
+    #[cfg(all(not(feature = "termux"), not(target_os = "android")))]
     {
         let mut clipboard = arboard::Clipboard::new()?;
         Ok(clipboard.get_text()?)
