@@ -1,0 +1,163 @@
+---
+title: "aichat — Session Management"
+---
+
+
+`aichat` is your unified CLI command-group for managing
+Claude Code and Codex sessions. It provides session
+continuation with better control than compaction alone,
+and fast full-text search across all your sessions.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../../getting-started/) for
+installation.
+:::
+
+<details>
+<summary><strong>Why I built this</strong></summary>
+
+This section explains the thought process and motivation
+behind `aichat`. Knowing the "why" helps understand what
+the command-group does and why it might be useful.
+
+#### Compaction limits your active context
+
+Session compaction preserves the full conversation history
+in the session file on disk, but replaces it with a
+**lossy summary** in the active API context. The agent
+can no longer recall details that didn't make it into the
+summary -- unless it explicitly reads the session file.
+A typical scenario: you are at 90% context usage and wish
+you could go a bit longer to finish the current work-phase.
+
+> I wish I could **truncate** some long tool results
+> (e.g. file reads or API results) or older assistant
+> messages and clear out some context to continue my work.
+
+This led to the `aichat trim` utility, which provides two
+variants:
+
+- A "blind" **trim** mode that truncates all tool-results
+  longer than a threshold (default 500 chars), and
+  optionally all-but-recent assistant messages -- all
+  user-configurable. This can free up 40-60% context.
+
+- A **smart-trim** mode that uses a headless Claude/Codex
+  agent to determine which messages can be safely
+  truncated in order to continue the current work.
+
+Both modes *clone* the current session before truncation,
+and inject two types of *lineage*:
+
+- *Session-lineage* is injected into the first user
+  message: a chronological listing of sessions from which
+  the current session was derived.
+- Each truncated message also carries a pointer to the
+  specific message index in the parent session so full
+  details can always be looked up.
+
+#### A cleaner alternative: start new session with lineage
+
+Session trimming can be a quick way to clear out context,
+but after a couple of trims it does not yield as much
+benefit. The lineage-injection led to a different idea:
+
+> Create a fresh session, inject parent-session lineage
+> into the first user message, along with instructions to
+> extract context of the latest task from the parent
+> session.
+
+This is the idea behind the `aichat rollover`
+functionality, which is the variant used most frequently
+-- instead of first trimming a session. The new session
+starts quickly and the agent can extract needed context
+(usually from the latest chat session shown in the
+lineage).
+
+#### A hook to simplify continuing work from a session
+
+To make it seamless to pick any of the above continuation
+modes from within a Claude Code session, a
+`UserPromptSubmit` hook (via the `aichat` plugin) is
+triggered when you type `>resume` (or `>continue` or
+`>handoff`). The hook copies the current session id into
+the clipboard and shows instructions to run
+`aichat resume <pasted-session-id>`.
+
+#### Fast full-text search for humans and agents
+
+The above session resumption methods are useful to
+continue from the *current* session, but often you want
+to continue work from an *older* session. This is why
+fast full-text search was added:
+
+> Super-fast Rust/Tantivy-based full-text search of all
+> sessions across Claude Code and Codex CLI, with a
+> pleasant TUI for humans, and a CLI mode for agents to
+> find past work.
+
+Users can launch the search TUI using `aichat search`,
+and agents can run `aichat search --json` to get results
+in JSONL format for quick analysis and filtering with
+`jq`.
+
+---
+
+> The Rust/Tantivy-based search TUI was inspired by
+> [zippoxer/recall](https://github.com/zippoxer/recall).
+> See also
+> [clicodelog](https://github.com/monk1337/clicodelog)
+> for a browsable HTML view of sessions.
+
+</details>
+
+## Overview
+
+`aichat` is your unified CLI command-group for managing
+Claude Code and Codex sessions. Two main capabilities
+are available:
+
+1. **Resume with lineage** -- Continue sessions when
+   context fills up, preserving links to parent sessions
+   with on-demand context recovery. See the
+   [Resume](./resume/) page for details.
+
+2. **Search** -- *Full-text search* across all sessions
+   with a fast Rust/Tantivy-based TUI for humans, and
+   CLI (with `--json` flag for JSONL output) for Codex
+   or Claude (sub) Agent to search for past work. Note
+   that Claude Code's built-in search is not full-text;
+   it only searches the ad-hoc session titles. See the
+   [Search](./search/) page for details.
+
+## Example Commands
+
+```bash
+# Resume specific session with trim/rollover options
+aichat resume <session_id>
+
+# Resume latest session with trim/rollover options
+aichat resume
+
+# Find sessions by keyword (human TUI)
+aichat search "topic"
+
+# Fast full-text search with JSONL output for agents
+aichat search "langroid mcp" --json
+```
+
+For detailed CLI options, run:
+
+```bash
+aichat --help              # See all subcommands
+aichat <subcommand> --help # Help for specific subcommand
+```
+
+:::tip
+Most `aichat` commands accept `--claude-home` and
+`--codex-home` to override the default session
+directories (`~/.claude` and `~/.codex`). You can also
+set the `CLAUDE_CONFIG_DIR` and `CODEX_HOME` environment
+variables.
+:::

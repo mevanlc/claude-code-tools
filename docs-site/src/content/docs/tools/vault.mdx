@@ -1,0 +1,263 @@
+---
+title: "vault — Encrypted .env Backup"
+description: >
+  Centralized encrypted backup manager for .env files
+  using SOPS with GPG encryption.
+---
+
+import { Tabs, TabItem, Steps, Card, CardGrid } from
+  "@astrojs/starlight/components";
+
+`vault` is a centralized encrypted backup manager for
+`.env` files across all your projects. It uses
+**SOPS** (Secrets OPerationS) with **GPG** encryption
+to securely store environment variables in a central
+location at `~/Git/dotenvs/`.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../getting-started/) for installation.
+:::
+
+## How It Works
+
+1. **Central Storage** -- All encrypted backups live in
+   `~/Git/dotenvs/`
+2. **Project-based** -- Each project's `.env` file is
+   backed up with the project directory name
+   (e.g., `myproject.env.encrypt`)
+3. **GPG Encryption** -- Uses your GPG key to
+   encrypt and decrypt files
+4. **Smart Sync** -- Automatically detects which
+   version is newer and syncs accordingly
+5. **Safety First** -- Always creates timestamped
+   backups before overwriting
+
+## Requirements
+
+Before using `vault`, ensure you have:
+
+- A **GPG key** configured on your system
+- **SOPS** installed (`brew install sops` on macOS)
+
+## Commands
+
+<Tabs>
+  <TabItem label="sync">
+    ### vault sync
+
+    Smart synchronization that automatically detects
+    the sync direction:
+
+    - If only local `.env` exists, encrypts to vault
+    - If only vault backup exists, decrypts to local
+    - If local is newer, encrypts to vault
+      (with confirmation)
+    - If vault is newer, decrypts to local
+      (with confirmation)
+
+    ```bash
+    vault sync           # Auto-detect direction
+    vault sync --push    # Force local -> vault
+    vault sync --pull    # Force vault -> local
+    ```
+  </TabItem>
+
+  <TabItem label="encrypt">
+    ### vault encrypt
+
+    Explicitly encrypt your local `.env` file to the
+    centralized vault:
+
+    ```bash
+    vault encrypt
+    ```
+
+    Features:
+
+    - Creates a timestamped backup if the encrypted
+      file already exists
+    - Requires confirmation before overwriting
+      existing backups
+  </TabItem>
+
+  <TabItem label="decrypt">
+    ### vault decrypt
+
+    Explicitly decrypt from the centralized vault to
+    your local `.env`:
+
+    ```bash
+    vault decrypt
+    ```
+
+    Features:
+
+    - Creates a timestamped backup of the current
+      `.env` before overwriting
+    - Warns if the local `.env` is newer than
+      the backup
+    - Requires confirmation in case of conflicts
+  </TabItem>
+
+  <TabItem label="list">
+    ### vault list
+
+    List all encrypted backups in the central vault:
+
+    ```bash
+    vault list
+    ```
+
+    Shows all `.env.encrypt` files in
+    `~/Git/dotenvs/` with their sizes.
+  </TabItem>
+
+  <TabItem label="status">
+    ### vault status
+
+    Show detailed sync status for the current project:
+
+    ```bash
+    vault status
+    ```
+
+    Displays:
+
+    - Whether the local `.env` exists
+    - Whether a backup exists in the vault
+    - Which version is newer (with timestamps)
+    - Sync status (in sync, local newer,
+      backup newer, etc.)
+  </TabItem>
+</Tabs>
+
+## Workflow Examples
+
+### Initial Setup
+
+<Steps>
+1. Navigate to your project directory:
+
+   ```bash
+   cd myproject
+   ```
+
+2. Create your `.env` file with the required secrets.
+
+3. Back up to the central vault:
+
+   ```bash
+   vault encrypt
+   ```
+</Steps>
+
+### Cloning a Project
+
+<Steps>
+1. Clone the repository:
+
+   ```bash
+   git clone https://github.com/user/project
+   cd project
+   ```
+
+2. Restore `.env` from the central vault:
+
+   ```bash
+   vault decrypt
+   ```
+</Steps>
+
+### Regular Development
+
+<Steps>
+1. After modifying your `.env` file, sync to vault:
+
+   ```bash
+   vault sync  # Automatically encrypts to vault
+   ```
+
+2. On a different machine, pull the latest:
+
+   ```bash
+   vault sync  # Automatically decrypts newer version
+   ```
+</Steps>
+
+### Conflict Resolution
+
+When both local and vault versions exist but differ:
+
+<Steps>
+1. Check which version is newer:
+
+   ```bash
+   vault status
+   ```
+
+2. Force the direction you want:
+
+   ```bash
+   vault sync --push  # Force local -> vault
+   vault sync --pull  # Force vault -> local
+   ```
+</Steps>
+
+## Security Notes
+
+:::caution
+The central vault directory (`~/Git/dotenvs/`) should
+be included in your regular backups. Consider version
+controlling the encrypted files for additional safety.
+:::
+
+- Files are encrypted using your **GPG key**
+- Only you can decrypt the files (with your
+  private key)
+- Encrypted files are safe to store in version
+  control
+- Timestamped backups protect against accidental
+  overwrites
+
+## Troubleshooting
+
+### "No GPG key found"
+
+Generate a GPG key:
+
+```bash
+gpg --gen-key
+```
+
+Follow the prompts to create a new key pair. Once
+created, `vault` will automatically detect and use it.
+
+### "SOPS not found"
+
+Install SOPS for your platform:
+
+<Tabs>
+  <TabItem label="macOS">
+    ```bash
+    brew install sops
+    ```
+  </TabItem>
+
+  <TabItem label="Linux">
+    Download the latest release from the
+    [SOPS releases page](https://github.com/mozilla/sops/releases).
+  </TabItem>
+</Tabs>
+
+### Permission Issues
+
+Ensure you have write access to the vault directory:
+
+```bash
+mkdir -p ~/Git/dotenvs
+chmod 700 ~/Git/dotenvs
+```
+
+The `700` permission ensures only your user can read,
+write, or list the directory contents.

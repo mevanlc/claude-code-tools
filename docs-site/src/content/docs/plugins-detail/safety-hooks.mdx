@@ -1,0 +1,154 @@
+---
+title: "Safety Hooks"
+description: >
+  Hooks that block or require approval for dangerous
+  operations in Claude Code, protecting files, git
+  history, and environment secrets.
+---
+
+import { Tabs, TabItem, Steps, Card, CardGrid } from
+  "@astrojs/starlight/components";
+
+The `safety-hooks` plugin provides a comprehensive
+set of hooks that enhance Claude Code's behavior and
+prevent dangerous operations. These hooks intercept
+commands before execution and either block them
+outright, require user approval, or suggest safer
+alternatives.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../getting-started/) for installation.
+:::
+
+Install the plugin via the Claude Code marketplace:
+
+```bash
+claude plugin install safety-hooks@cctools-plugins
+```
+
+## Key Safety Features
+
+<CardGrid>
+  <Card title="File Deletion Protection">
+    Blocks `rm -rf` on critical paths and enforces
+    a TRASH directory pattern. Requires approval
+    for other `rm` commands.
+  </Card>
+
+  <Card title="Git Commit Protection">
+    Requires explicit user approval before any
+    `git commit`, using Claude Code's built-in
+    permission prompt UI.
+  </Card>
+
+  <Card title="Git Add Protection">
+    Smart staging control that hard-blocks dangerous
+    patterns like `git add .` and `git add -A`,
+    while allowing new files and prompting for
+    modified files.
+  </Card>
+
+  <Card title="Environment Security">
+    Blocks all `.env` file operations (read, write,
+    edit) and suggests the
+    [env-safe](../tools/env-safe/) command for
+    safe inspection.
+  </Card>
+
+  <Card title="Context Management">
+    Blocks reading files longer than 500 lines to
+    prevent context bloat in Claude Code sessions.
+  </Card>
+
+  <Card title="Command Enhancement">
+    Enforces `rg` (ripgrep) over `grep` for better
+    search performance and output.
+  </Card>
+</CardGrid>
+
+## How It Works
+
+Safety hooks intercept commands at different stages:
+
+- **PreToolUse hooks** run before a tool executes,
+  allowing the hook to block, modify, or require
+  approval for the operation.
+- **PostToolUse hooks** run after a tool executes,
+  enabling follow-up actions like notifications.
+
+Each hook returns one of three results:
+
+- **Allow** -- the command proceeds normally
+- **Block** -- the command is prevented, with
+  an error message explaining why
+- **Approval required** -- Claude Code shows a
+  permission prompt so you can approve or deny
+
+## Available Hooks
+
+| Hook File | What It Protects |
+|-----------|-----------------|
+| `bash_hook.py` | Main orchestrator for all bash command checks |
+| `git_commit_block_hook.py` | User permission prompt for `git commit` |
+| `git_add_block_hook.py` | Smart staging: blocks dangerous patterns, prompts for modified files |
+| `env_file_protection_hook.py` | Blocks all `.env` file operations (read/write/edit) |
+| `file_size_conditional_hook.py` | Prevents reading files over 500 lines |
+| `grep_block_hook.py` | Enforces ripgrep (`rg`) over `grep` |
+| `notification_hook.sh` | Sends ntfy.sh notifications on events |
+
+## Protection Details
+
+### Git Add Protection
+
+The `git add` hook applies layered protection:
+
+- **Hard blocks** (always denied):
+
+  - `git add .`
+  - `git add ../`
+  - `git add *`
+  - `git add -A` / `git add --all`
+
+- **New files** -- allowed without a prompt,
+  since they pose minimal risk.
+
+- **Modified files** -- require user approval
+  via the permission prompt.
+
+- **Directories** -- the hook performs a dry-run
+  to detect which files would be staged. If any
+  modified files are included, approval is
+  required.
+
+### Environment File Protection
+
+All operations on `.env` files are blocked:
+
+- Reading (e.g., `cat .env`, Read tool)
+- Writing (e.g., Write tool)
+- Editing (e.g., Edit tool)
+
+The hook directs users to the
+[env-safe](../tools/env-safe/) CLI for safe
+inspection of environment variables.
+
+:::tip
+If you need to modify a `.env` file, do so
+manually outside of Claude Code. Use `env-safe`
+to verify the changes were applied correctly.
+:::
+
+### File Size Limits
+
+Reading files longer than 500 lines is blocked to
+prevent context window bloat. When a large file is
+detected, the hook suggests reading specific line
+ranges or using search tools instead.
+
+### Command Enhancement
+
+When Claude Code attempts to use `grep`, the hook
+blocks the command and suggests using `rg` (ripgrep)
+instead. Ripgrep provides better performance,
+respects `.gitignore`, and produces cleaner output.

@@ -1,0 +1,134 @@
+---
+title: "fix-session — Session Repair"
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+`fix-session` is a CLI tool that repairs broken parent
+chain references in Claude Code session files. It fixes
+the bug where progress/subagent UUIDs contaminate the
+conversation chain, resulting in lost context on session
+resume.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../getting-started/) for
+installation.
+:::
+
+## The Problem
+
+Claude Code stores session messages as JSONL files where
+each entry has a `uuid` and a `parentUuid` forming a
+linked chain. A
+[known bug](https://github.com/anthropics/claude-code/issues/22107)
+causes non-conversation entries (progress updates,
+subagent messages) to break into this chain. When that
+happens, resuming a session with `claude -r` loses
+context because the chain is severed.
+
+## Usage
+
+### Analyze a Session (Dry Run)
+
+Pass a partial or full session ID to analyze it:
+
+```bash
+fix-session f8ddc
+```
+
+This prints a report showing total entries, conversation
+entries, orphan parent references, and chain length.
+
+### Fix a Session
+
+<Tabs>
+  <TabItem label="Fix in place">
+    Creates a `.bak` backup and fixes the original file:
+
+    ```bash
+    fix-session f8ddc --fix --in-place
+    ```
+  </TabItem>
+  <TabItem label="Fix to new file">
+    Writes the repaired session to a separate file:
+
+    ```bash
+    fix-session f8ddc --fix --output fixed.jsonl
+    ```
+  </TabItem>
+</Tabs>
+
+### CLI Options
+
+| Flag | Description |
+|------|-------------|
+| `SESSION` | Partial ID, full UUID, or path to `.jsonl` |
+| `--fix` | Apply fixes (default is analyze only) |
+| `--in-place` | Fix in place with `.bak` backup |
+| `--output FILE` | Write fixed session to a new file |
+| `--verbose, -v` | Show details about orphan entries |
+
+## How It Works
+
+1. Loads all entries from the session JSONL file.
+2. Identifies conversation entries (`user`, `assistant`,
+   `system`, `summary`) vs. non-conversation entries.
+3. Finds conversation entries whose `parentUuid` points
+   to a non-conversation entry (orphans).
+4. Relinks each orphan to the previous conversation
+   entry in file order.
+5. Verifies the repaired chain is complete.
+
+## Python API
+
+```python
+from claude_code_tools.fix_session import (
+    check_and_fix_session,
+)
+from pathlib import Path
+
+# Auto-fix a session in place (creates .bak backup)
+needed_fix = check_and_fix_session(
+    Path("~/.claude/projects/.../session.jsonl")
+)
+```
+
+## Related Make Targets
+
+Additional session maintenance utilities are available
+via `make`:
+
+| Command | Description |
+|---------|-------------|
+| `make fix-session-metadata` | Scan for sessionId mismatches (dry-run) |
+| `make fix-session-metadata-apply` | Fix sessionId mismatches |
+| `make delete-helper-sessions` | Find helper sessions to delete (dry-run) |
+| `make delete-helper-sessions-apply` | Delete helper sessions |
+
+### fix-session-metadata
+
+Repairs session files where the `sessionId` in the JSON
+content does not match the filename UUID. This can
+happen with files that were cloned or smart-trimmed.
+
+```bash
+# Dry-run: report mismatches
+make fix-session-metadata
+
+# Apply fixes
+make fix-session-metadata-apply
+```
+
+### delete-helper-sessions
+
+Finds and removes helper/subagent sessions that are no
+longer needed.
+
+```bash
+# Dry-run: list sessions that would be deleted
+make delete-helper-sessions
+
+# Delete them
+make delete-helper-sessions-apply
+```

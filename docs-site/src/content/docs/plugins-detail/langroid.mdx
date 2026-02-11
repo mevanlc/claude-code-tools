@@ -1,0 +1,112 @@
+---
+title: "Langroid Plugin"
+description: >
+  Design pattern knowledge for the Langroid
+  multi-agent LLM framework.
+---
+
+import { Tabs, TabItem, Steps, Card, CardGrid } from
+  "@astrojs/starlight/components";
+
+<style>{`
+  table td:first-child,
+  table th:first-child {
+    white-space: nowrap;
+  }
+`}</style>
+
+The `langroid` plugin gives the agent a curated
+library of design patterns for the
+[Langroid](https://github.com/langroid/langroid)
+multi-agent LLM framework. The agent looks up
+best practices for agent configuration, tool usage,
+task control, and MCP integration -- and records
+newly discovered patterns for future reference.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../getting-started/) for installation.
+:::
+
+Install the plugin via the Claude Code marketplace:
+
+```bash
+claude plugin install langroid@cctools-plugins
+```
+
+## Skills
+
+| Skill | What It Does |
+|-------|--------------|
+| `langroid:patterns` | Index of Langroid design patterns (agent config, tools, task control, MCP integration) |
+| `langroid:add-pattern` | Record new patterns discovered while working with the Langroid codebase |
+
+These skills are meant for the **agent** to use,
+not for you to invoke directly. You prompt the agent
+in natural language and it consults or updates the
+pattern library as needed.
+
+## How to Use
+
+### Finding patterns
+
+Just describe what you want to build and the agent
+will consult the pattern index:
+
+> "Use the proper Langroid pattern to implement an
+> agent that emits a structured ToolMessage and
+> terminates the task."
+
+> "How do I set up batch processing with Langroid
+> so each item gets its own cloned agent?"
+
+The agent uses the `langroid:patterns` skill behind
+the scenes to find the matching pattern and its
+code example.
+
+### Recording new patterns
+
+When you discover a useful Langroid idiom while
+working, ask the agent to record it:
+
+> "Record the pattern we just saw for using
+> `@mcp_tool` to selectively enable MCP tools on
+> a Langroid agent, using your langroid:add-pattern
+> skill."
+
+> "Add a new Langroid pattern for using quiet_mode()
+> to suppress agent output during batch processing."
+
+The agent uses the `langroid:add-pattern` skill to
+add an entry to the pattern index and create a
+reference document with code examples. Over time
+this builds a project-local knowledge base that the
+agent can draw on in future sessions.
+
+### Pattern categories
+
+The pattern index is organized by category:
+
+- **Agent & Task Basics** -- Setting up agents,
+  wrapping in tasks, returning structured output
+- **Tool Handlers** -- Stateful handlers, validation,
+  retry loops
+- **Task Control** -- Termination on specific tools,
+  batch processing
+- **Integration & Output** -- MCP tool integration,
+  quiet mode for clean CLI output
+
+## About Langroid
+
+[Langroid](https://github.com/langroid/langroid)
+is a Python framework for building multi-agent LLM
+applications. It provides:
+
+- A clean agent abstraction with configurable LLMs
+- Built-in tool/function-calling support
+- Multi-agent task orchestration
+- MCP server integration
+
+Visit the
+[Langroid GitHub repository](https://github.com/langroid/langroid)
+for full documentation and examples.

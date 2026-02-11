@@ -1,0 +1,176 @@
+---
+title: "Plugins"
+description: >-
+  Claude Code plugin installation and details
+  for hooks, skills, agents, and safety guards.
+---
+
+import { Steps, Badge } from "@astrojs/starlight/components";
+
+<style>{`
+  table td:nth-child(2),
+  table th:nth-child(2) {
+    white-space: nowrap;
+  }
+`}</style>
+
+This repo provides plugins for the
+[Claude Code marketplace](https://code.claude.com/docs/en/discover-plugins).
+
+## Plugin Overview
+
+| Plugin | Description |
+|--------|-------------|
+| `aichat` | Hooks, commands, skills, agents for session work and search |
+| `tmux-cli` | Terminal automation skill |
+| `workflow` | Work logging, code walk-through, issue specs, UI testing |
+| `safety-hooks` | Prevent destructive operations |
+| `langroid` | Design patterns for the [Langroid](https://github.com/langroid/langroid) framework |
+| `voice` | Spoken audio summaries |
+
+## Installation
+
+<Steps>
+
+1. **Add the marketplace**
+
+   From your terminal:
+
+   ```bash
+   claude plugin marketplace add pchalasani/claude-code-tools
+   ```
+
+   Or from inside a Claude Code session:
+
+   ```
+   /plugin marketplace add pchalasani/claude-code-tools
+   ```
+
+   This creates the **`cctools-plugins`** plugin group.
+
+2. **Install plugins**
+
+   ```bash
+   claude plugin install "aichat@cctools-plugins"
+   claude plugin install "tmux-cli@cctools-plugins"
+   claude plugin install "workflow@cctools-plugins"
+   claude plugin install "safety-hooks@cctools-plugins"
+   claude plugin install "langroid@cctools-plugins"
+   claude plugin install "voice@cctools-plugins"
+   ```
+
+   Or use `/plugin` without arguments inside a
+   session to launch a TUI for browsing and
+   installing.
+
+</Steps>
+
+---
+
+## aichat Plugin
+
+The `aichat` plugin provides hooks, skills, and
+an agent for session management and search.
+
+| Type | Name | What it does |
+|------|------|--------------|
+| Hook | `>resume` | Type `>resume` (or `>continue`, `>handoff`) to copy session ID and show resume instructions |
+| Hook | `>session` | Type `>session` (or `>session-id`) to copy the session ID to clipboard |
+| Skill | `/session-search` | Search past sessions (for agents without sub-agent support, e.g. Codex) |
+| Skill | `/recover-context` | Extract context from parent sessions into the current conversation |
+| Agent | `session-searcher` | Sub-agent to search and retrieve context from past sessions |
+
+:::tip
+The `>resume` hook is the quickest way to
+continue work when context fills up. It copies
+your session ID to the clipboard and shows
+instructions -- no need to manually find the
+session ID.
+:::
+
+---
+
+## tmux-cli Plugin
+
+| Type | Name | What it does |
+|------|------|--------------|
+| Skill | `/tmux-cli` | Interact with CLI apps and agents in other tmux panes |
+
+The skill gives Claude Code the ability to send
+commands, read output, and coordinate with
+processes (including other CLI agents) running
+in other tmux panes. See the
+[tmux-cli tool page](/claude-code-tools/tools/tmux-cli/)
+for full details.
+
+---
+
+## safety-hooks Plugin
+
+Hooks that block or require approval for
+dangerous operations.
+
+| Hook | What it blocks / modifies |
+|------|--------------------------|
+| `rm` protection | Blocks `rm -rf` on critical paths; requires approval for others |
+| `git add` protection | Blocks `git add -A`; requires approval for modified files |
+| `git checkout` protection | Warns before discarding uncommitted changes |
+| `git commit` protection | Blocks commits without user review |
+| `.env` protection | Blocks all read/write/edit of `.env` files; suggests `env-safe` CLI |
+| File length limit | Blocks reading files >500 lines to prevent context bloat |
+
+See the
+[Safety Hooks detail page](/claude-code-tools/plugins-detail/safety-hooks/)
+for hook file descriptions and full documentation.
+
+---
+
+## workflow Plugin
+
+Skills and agents for development workflow tasks.
+
+| Skill / Agent | What it does |
+|---------------|--------------|
+| `/code-walk-thru` | Walk through files in your editor to explain code or show changes |
+| `/log-work` | Log work progress to `WORKLOG/YYYYMMDD.md` |
+| `/make-issue-spec` | Create task specs at `issues/YYYYMMDD-topic.md` |
+| `ui-tester` agent | Browser-based UI testing via Chrome DevTools MCP |
+
+See the
+[Workflow detail page](/claude-code-tools/plugins-detail/workflow/)
+for more information.
+
+---
+
+## langroid Plugin
+
+Design pattern knowledge for the
+[Langroid](https://github.com/langroid/langroid)
+multi-agent LLM framework.
+
+| Skill | What it does |
+|-------|--------------|
+| `/patterns` | Index of Langroid design patterns (agent config, tools, task control, MCP integration) |
+| `/add-pattern` | Record new patterns as you learn them from the Langroid codebase |
+
+See the
+[Langroid detail page](/claude-code-tools/plugins-detail/langroid/)
+for more information.
+
+---
+
+## voice Plugin
+
+Get spoken audio feedback when Claude Code
+completes a task. The agent automatically speaks
+a 1-2 sentence summary before stopping, so you
+can multitask while Claude works.
+
+Uses [pocket-tts](https://github.com/kyutai-labs/pocket-tts)
+for lightweight text-to-speech.
+
+See the
+[Voice detail page](/claude-code-tools/plugins-detail/voice/)
+for prerequisites, configuration, architecture
+details, and recommended speech-to-text
+companions.

@@ -1,0 +1,171 @@
+---
+title: "Agent Access"
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Agents (Claude Code sub-agents, Codex CLI, or any
+script) can use `aichat` programmatically to search
+session history and recover prior context without
+human interaction.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../../getting-started/) for
+installation.
+:::
+
+## The `--json` flag
+
+The key to agent access is the `--json` flag on
+`aichat search`. Instead of launching the interactive
+TUI, it outputs one JSON object per line (JSONL)
+that agents can parse with `jq`:
+
+```bash
+# Search and get structured output
+aichat search "MCP server" --json
+
+# Filter with jq
+aichat search "auth" --json | jq '.session_id'
+
+# Limit results
+aichat search "refactor" --json -n 5
+```
+
+### JSONL fields
+
+Each line contains these fields:
+
+| Field | Description |
+|-------|-------------|
+| `session_id` | Unique session identifier |
+| `agent` | `claude` or `codex` |
+| `project` | Project directory name |
+| `branch` | Git branch at time of session |
+| `cwd` | Working directory |
+| `lines` | Number of lines in session |
+| `created` | Session creation timestamp |
+| `modified` | Last modification timestamp |
+| `first_msg` | First user message (preview) |
+| `last_msg` | Last message (preview) |
+| `file_path` | Full path to the JSONL session file |
+| `derivation_type` | `null`, `trimmed`, or `continued` |
+| `is_sidechain` | Whether this is a sub-agent session |
+| `snippet` | Matching text snippet |
+
+## Session-searcher sub-agent
+
+For Claude Code users, the `aichat`
+[plugin](../../../getting-started/plugins/) provides
+a **session-searcher** sub-agent that handles the
+entire search-and-summarize workflow. It runs as a
+sub-agent (using the Task tool) so search results
+do not pollute your main context.
+
+```
+Use your session-searcher sub-agent to find
+sessions where we discussed the auth design.
+```
+
+The sub-agent:
+
+1. Runs `aichat search --json` with appropriate
+   queries
+2. Parses results with `jq`
+3. Reads up to 3 session files for detail
+4. Returns a concise markdown summary with key
+   findings and session references
+
+:::tip
+The session-searcher sub-agent uses the `haiku`
+model for efficiency. It is ideal for recovering
+context from older sessions without consuming your
+main session's context window.
+:::
+
+## Session-search skill
+
+For CLI agents **without** sub-agent support
+(e.g., Codex CLI), the `session-search` skill
+provides the same workflow as a direct skill
+invocation:
+
+```bash
+# The agent follows the skill instructions to:
+# 1. Run aichat search --json -n 10 "query"
+# 2. Parse results with jq
+# 3. Read session files for detail
+# 4. Return a focused summary
+```
+
+:::note
+If you are using Claude Code, prefer the
+session-searcher sub-agent over the skill. The
+sub-agent runs in a separate context so it does not
+consume tokens in your main conversation.
+:::
+
+## All subcommands
+
+The full list of `aichat` subcommands:
+
+<Tabs>
+  <TabItem label="Session management">
+
+    | Command | Description |
+    |---------|-------------|
+    | `aichat` | Action menu for latest session(s) |
+    | `aichat resume [id]` | Resume with strategy options |
+    | `aichat rollover [id]` | Rollover to fresh session |
+    | `aichat trim [id]` | Trim session content |
+    | `aichat clone [id]` | Clone a session file |
+    | `aichat menu [id]` | Interactive action menu |
+    | `aichat lineage [id]` | Show parent lineage chain |
+    | `aichat query [id]` | Query a session with AI |
+
+  </TabItem>
+  <TabItem label="Search & index">
+
+    | Command | Description |
+    |---------|-------------|
+    | `aichat search [query]` | Full-text search (TUI or `--json`) |
+    | `aichat build-index` | Rebuild the Tantivy index |
+    | `aichat clear-index` | Delete the index for fresh rebuild |
+    | `aichat index-stats` | Show index statistics |
+
+  </TabItem>
+  <TabItem label="Export & info">
+
+    | Command | Description |
+    |---------|-------------|
+    | `aichat info [id]` | Show session metadata |
+    | `aichat export [id]` | Export session to text |
+    | `aichat copy [id]` | Copy session file |
+    | `aichat move [id]` | Move session file |
+    | `aichat delete [id]` | Delete a session |
+
+  </TabItem>
+  <TabItem label="Find (legacy)">
+
+    | Command | Description |
+    |---------|-------------|
+    | `aichat find` | Find sessions (all agents) |
+    | `aichat find-claude` | Find Claude sessions |
+    | `aichat find-codex` | Find Codex sessions |
+    | `aichat find-original` | Find original from derived |
+    | `aichat find-derived` | Find derived from original |
+
+    :::note
+    The `find` commands are legacy. Prefer
+    `aichat search` for all discovery tasks.
+    :::
+
+  </TabItem>
+</Tabs>
+
+For help on any subcommand:
+
+```bash
+aichat <subcommand> --help
+```
