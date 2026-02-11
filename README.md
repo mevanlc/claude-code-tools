@@ -71,13 +71,6 @@ CLI commands, skills, agents, hooks, plugins. Click on a card below to navigate.
 </a>
 </td>
 <td align="center">
-<a href="#google-sheets-tools">
-<img src="assets/card-gsheets.svg" alt="gsheets" width="200"/>
-</a>
-</td>
-</tr>
-<tr>
-<td align="center">
 <a href="#using-claude-code-with-open-weight-anthropic-api-compatible-llm-providers">
 <img src="assets/card-alt.svg" alt="alt" width="200"/>
 </a>

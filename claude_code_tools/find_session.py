@@ -20,8 +20,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
-import termios
-import tty
+import click
 
 # Import search functions from existing tools
 from claude_code_tools.find_claude_session import (
@@ -1069,14 +1068,12 @@ if __name__ == "__main__":
     main()
 def _read_key() -> str:
     """Read a single keypress (non-blocking for Enter/Esc semantics)."""
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
     try:
-        tty.setcbreak(fd)
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
-    return ch
+        ch = click.getchar()
+    except (KeyboardInterrupt, EOFError):
+        return "\n"
+    # Normalize Windows Enter key (\r) to \n so callers can treat it as "Enter".
+    return "\n" if ch == "\r" else ch
 
 
 def prompt_post_action() -> str:
