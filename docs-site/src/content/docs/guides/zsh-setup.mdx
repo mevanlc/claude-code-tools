@@ -1,0 +1,346 @@
+---
+title: "Zsh Setup"
+description: >
+  Full Zsh setup guide with Oh My Zsh, Starship
+  prompt, eza, history search, and productivity
+  aliases.
+---
+
+import {
+  Tabs,
+  TabItem,
+  Steps,
+} from '@astrojs/starlight/components';
+
+## Prerequisites
+
+<Steps>
+
+1. **Install Homebrew** (macOS package manager):
+
+   ```bash
+   /bin/bash -c "$(curl -fsSL \
+     https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+2. **Install Zsh** (usually pre-installed on macOS):
+
+   ```bash
+   brew install zsh
+   ```
+
+</Steps>
+
+## Oh My Zsh
+
+Install the Oh My Zsh framework for managing Zsh
+configuration:
+
+```bash
+sh -c "$(curl -fsSL \
+  https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+```
+
+This creates `~/.oh-my-zsh` and a basic `~/.zshrc`.
+
+## Plugins
+
+### Zsh Autosuggestions
+
+Suggests commands as you type based on history and
+completions:
+
+```bash
+git clone \
+  https://github.com/zsh-users/zsh-autosuggestions \
+  ~/.zsh/zsh-autosuggestions
+```
+
+### Zsh Syntax Highlighting
+
+Provides syntax highlighting for the shell:
+
+```bash
+git clone \
+  https://github.com/zsh-users/zsh-syntax-highlighting.git \
+  ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
+```
+
+### Configure Plugins in .zshrc
+
+```bash
+# Oh My Zsh path
+export ZSH="$HOME/.oh-my-zsh"
+
+# Plugins configuration
+plugins=(
+    git
+    zsh-autosuggestions
+    zsh-syntax-highlighting
+)
+
+# Source autosuggestions
+source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
+```
+
+## Starship Prompt
+
+[Starship](https://starship.rs/) is a minimal,
+blazing-fast, and customizable prompt for any shell.
+
+<Steps>
+
+1. **Install Starship:**
+
+   ```bash
+   curl -sS https://starship.rs/install.sh | sh
+   ```
+
+2. **Add to the end of `~/.zshrc`:**
+
+   ```bash
+   eval "$(starship init zsh)"
+   ```
+
+3. **Configure** by creating or editing
+   `~/.config/starship.toml`. The `catppuccin`
+   preset is recommended:
+
+   ```bash
+   starship preset catppuccin-powerline \
+     -o ~/.config/starship.toml
+   ```
+
+   See the
+   [Starship guide](https://starship.rs/guide/)
+   for full configuration options.
+
+</Steps>
+
+## Enhanced Directory Listings with eza
+
+[eza](https://eza.rocks/) is a modern replacement
+for `ls` with colors, icons, and Git integration.
+
+<Steps>
+
+1. **Install eza:**
+
+   ```bash
+   brew install eza
+   ```
+
+2. **Add aliases** to your `~/.zshrc`:
+
+   ```bash
+   # Replace ls with eza
+   alias ls='eza --icons --group-directories-first'
+   alias ll='eza -l --icons --group-directories-first --header'
+   alias la='eza -la --icons --group-directories-first --header'
+   alias lt='eza --tree --icons --level=2'
+   alias ltd='eza --tree --icons --level=2 --only-dirs'
+
+   # Extended aliases
+   alias l='eza -lbF --git --icons'
+   alias llm='eza -lbGd --git --sort=modified'
+   alias lls='eza -lbhHigmuSa --time-style=long-iso --git --color-scale'
+   ```
+
+</Steps>
+
+The `lls` alias shows full details: file size,
+hardlinks, inode, group, permissions, modification
+time, creation time, status, and Git status -- with
+ISO timestamps and color-scaled file sizes.
+
+**Features:**
+
+- **Icons** -- file type icons (requires a Nerd Font)
+- **Colors** -- color-codes files by type and
+  permissions
+- **Git integration** -- shows git status in listings
+- **Tree view** -- built-in tree view with `--tree`
+- **Sorting** -- groups directories first by default
+
+## Terminal Title Management
+
+Add custom terminal title that shows the current
+directory:
+
+```bash
+# Disable auto-setting terminal title
+DISABLE_AUTO_TITLE="true"
+
+# Set terminal title to current directory
+function precmd () {
+  echo -ne "\033]0;$(print -rD $PWD)\007"
+}
+precmd
+
+# Show command being executed in title
+function preexec () {
+  print -Pn "\e]0;$(print -rD $PWD) $1\a"
+}
+```
+
+## History Search
+
+<Tabs>
+<TabItem label="Atuin">
+
+[Atuin](https://github.com/atuinsh/atuin) provides
+modern shell history with sync, search, and stats.
+
+<Steps>
+
+1. **Install:**
+
+   ```bash
+   brew install atuin
+   ```
+
+2. **Configure** in `~/.zshrc`:
+
+   ```bash
+   export ATUIN_NOBIND="true"
+   eval "$(atuin init zsh)"
+   # Bind to up arrow keys
+   bindkey '^[[A' _atuin_search_widget
+   bindkey '^[OA' _atuin_search_widget
+   ```
+
+</Steps>
+
+</TabItem>
+<TabItem label="HSTR">
+
+[HSTR](https://github.com/dvorka/hstr) is a simple
+but effective history search tool.
+
+<Steps>
+
+1. **Install:**
+
+   ```bash
+   brew install hstr
+   ```
+
+2. **Configure** in `~/.zshrc`:
+
+   ```bash
+   alias hh=hstr
+   # Skip cmds w/ leading space from history
+   setopt histignorespace
+   export HSTR_CONFIG=hicolor
+   # Bind hstr to Ctrl-r
+   bindkey -s "\C-r" "\C-a hstr -- \C-j"
+   ```
+
+</Steps>
+
+</TabItem>
+</Tabs>
+
+## Useful Aliases
+
+Add these productivity aliases to your `~/.zshrc`:
+
+```bash
+# Git aliases
+alias gsuno="git status -uno"
+alias gspu="git stash push -m"
+alias gspop="git stash pop"
+alias gsl="git stash list"
+
+# Quick git commit amend and push
+function gcpq() {
+  ga -u
+  git commit --amend --no-edit
+  git push origin main --force-with-lease
+}
+
+# Tmux aliases
+alias tmnew="tmux new -s "
+alias tmls="tmux ls"
+alias tma="tmux a -t "
+alias tmk="tmux kill-session -t "
+alias tmd="tmux detach"
+```
+
+## Completion System
+
+Enable advanced tab completion:
+
+```bash
+autoload -Uz compinit
+zstyle ':completion:*' menu select
+fpath+=~/.zfunc
+```
+
+## Environment Variables
+
+Set common environment variables:
+
+```bash
+export EDITOR="nano"  # or "vim", "code", etc.
+export TERM=xterm-256color
+```
+
+## Final .zshrc Structure
+
+Your `~/.zshrc` should follow this general ordering:
+
+```bash
+# 1. Oh My Zsh configuration
+export ZSH="$HOME/.oh-my-zsh"
+plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
+
+# 2. Source additional files
+source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
+
+# 3. Environment variables
+export EDITOR="nano"
+export TERM=xterm-256color
+
+# 4. Aliases and functions
+alias gsuno="git status -uno"
+# ... more aliases
+
+# 5. Terminal title customization
+DISABLE_AUTO_TITLE="true"
+function precmd () { ... }
+function preexec () { ... }
+
+# 6. History search tool (Atuin or HSTR)
+eval "$(atuin init zsh)"
+
+# 7. Completion system
+autoload -Uz compinit
+zstyle ':completion:*' menu select
+
+# 8. Starship prompt (must be last)
+eval "$(starship init zsh)"
+```
+
+:::tip
+Starship init must be the **last** line in your
+`.zshrc` to ensure the prompt renders correctly.
+:::
+
+## Troubleshooting
+
+- **Slow shell startup** -- comment out unused
+  plugins and features
+- **Autosuggestions not working** -- ensure the
+  plugin is properly cloned and sourced
+- **Starship not showing** -- make sure it is the
+  last line in `.zshrc`
+- **Terminal title not updating** -- check that
+  `DISABLE_AUTO_TITLE="true"` is set
+
+## Additional Resources
+
+- [Oh My Zsh Wiki](https://github.com/ohmyzsh/ohmyzsh/wiki)
+- [Starship Documentation](https://starship.rs/config/)
+- [Zsh Autosuggestions](https://github.com/zsh-users/zsh-autosuggestions)
+- [Atuin Documentation](https://github.com/atuinsh/atuin)
