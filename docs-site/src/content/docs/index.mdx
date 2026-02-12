@@ -1,19 +1,21 @@
 ---
 title: claude-code-tools
 description: >-
-  Productivity tools for Claude Code, Codex-CLI,
-  and similar CLI coding agents
+  CLI tools, skills, agents, hooks, and plugins
+  for enhancing productivity with Claude Code
+  and other CLI coding agents.
 template: splash
 hero:
   tagline: >-
-    CLI commands, skills, agents, hooks, and plugins
-    for AI coding assistants
+    CLI tools, skills, agents, hooks, and plugins
+    for enhancing productivity with Claude Code
+    and other CLI coding agents.
   image:
     html: >-
       <img
-        src="/claude-code-tools/assets/demo.gif"
-        alt="claude-code-tools demo"
-        style="width:100%;max-width:480px;border-radius:8px;"
+        src="/claude-code-tools/assets/hero-logo.svg"
+        alt="claude-code-tools"
+        style="width:100%;max-width:420px;"
       />
   actions:
     - text: Get Started
@@ -27,6 +29,41 @@ hero:
 ---
 
 <style>{`
+  /* Hero title: pixel-art block logo */
+  [data-page-title] .hero h1,
+  .hero h1 {
+    font-size: 0 !important;
+    color: transparent !important;
+    line-height: 0 !important;
+    background-image: url('/claude-code-tools/assets/title-logo.svg');
+    background-repeat: no-repeat;
+    background-size: contain;
+    background-position: left center;
+    width: 100%;
+    max-width: 605px;
+    aspect-ratio: 605 / 420;
+    filter: drop-shadow(0 0 12px rgba(212, 149, 106, 0.25));
+  }
+
+  /* Style the tagline */
+  .hero .tagline {
+    color: #a8a4bf;
+    font-size: 1.15rem;
+    max-width: 520px;
+  }
+
+  /* Primary button: orange theme */
+  .hero a[class*="primary"] {
+    background: linear-gradient(135deg, #D97706, #F59E0B) !important;
+    border-color: #D97706 !important;
+    color: #0f0d1a !important;
+    font-weight: 600;
+  }
+  .hero a[class*="primary"]:hover {
+    background: linear-gradient(135deg, #F59E0B, #FBBF24) !important;
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+  }
+
   .retro-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
