@@ -2,11 +2,8 @@
 <img src="assets/title-logo.svg" alt="CLAUDE CODE TOOLS"
      width="500"/>
 
-CLI tools, skills, agents, hooks, and plugins
-for enhancing productivity with Claude Code
-and other CLI coding agents.
+CLI tools, skills, agents, hooks, and plugins for enhancing productivity with Claude Code and other coding agents.
 
-[![claude-code-tools](https://img.shields.io/github/v/release/pchalasani/claude-code-tools?filter=v*&label=claude-code-tools&color=blue)](https://pypi.org/project/claude-code-tools/)
 [![aichat-search](https://img.shields.io/github/v/release/pchalasani/claude-code-tools?filter=rust-v*&label=aichat-search&color=orange)](https://github.com/pchalasani/claude-code-tools/releases?q=rust)
 
 </div>
