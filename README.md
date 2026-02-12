@@ -1,12 +1,15 @@
-# claude-code-tools
+<div align="center">
+<img src="assets/title-logo.svg" alt="CLAUDE CODE TOOLS"
+     width="500"/>
+
+CLI tools, skills, agents, hooks, and plugins
+for enhancing productivity with Claude Code
+and other CLI coding agents.
 
 [![claude-code-tools](https://img.shields.io/github/v/release/pchalasani/claude-code-tools?filter=v*&label=claude-code-tools&color=blue)](https://pypi.org/project/claude-code-tools/)
 [![aichat-search](https://img.shields.io/github/v/release/pchalasani/claude-code-tools?filter=rust-v*&label=aichat-search&color=orange)](https://github.com/pchalasani/claude-code-tools/releases?q=rust)
 
-Productivity tools for Claude Code, Codex-CLI,
-and similar CLI coding agents.
-
-**[Full Documentation](https://pchalasani.github.io/claude-code-tools/)**
+</div>
 
 ### Install
 
@@ -38,6 +41,9 @@ for hooks, skills, and agents:
 ```bash
 claude plugin marketplace add pchalasani/claude-code-tools
 ```
+
+Click a card to jump to that feature, or
+**[read the full docs](https://pchalasani.github.io/claude-code-tools/)**.
 
 <div align="center">
 
