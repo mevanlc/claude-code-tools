@@ -8,7 +8,7 @@ CLI tools, skills, agents, hooks, and plugins for enhancing productivity with Cl
 
 </div>
 
-### Install
+## Install
 
 ```bash
 # Core package
@@ -38,6 +38,8 @@ for hooks, skills, and agents:
 ```bash
 claude plugin marketplace add pchalasani/claude-code-tools
 ```
+
+---
 
 Click a card to jump to that feature, or
 **[read the full docs](https://pchalasani.github.io/claude-code-tools/)**.
