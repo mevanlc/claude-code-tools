@@ -7,10 +7,12 @@
 
 CLI tools, skills, agents, hooks, and plugins for enhancing productivity with Claude Code and other coding agents.
 
-[![Documentation](https://img.shields.io/badge/docs-Full%20Documentation-blue?style=for-the-badge)](https://pchalasani.github.io/claude-code-tools/)
+[![Documentation](https://img.shields.io/badge/docs-Full%20Documentation-blue)](https://pchalasani.github.io/claude-code-tools/)
 [![aichat-search](https://img.shields.io/github/v/release/pchalasani/claude-code-tools?filter=rust-v*&label=aichat-search&color=orange)](https://github.com/pchalasani/claude-code-tools/releases?q=rust)
 
 </div>
+
+## [Full Documentation](https://pchalasani.github.io/claude-code-tools/)
 
 ## Install
 
