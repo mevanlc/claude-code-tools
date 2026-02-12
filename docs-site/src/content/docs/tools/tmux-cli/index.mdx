@@ -1,0 +1,107 @@
+---
+title: "tmux-cli — Terminal Automation"
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+`tmux-cli` is a command-line tool for controlling CLI
+applications running in tmux panes and windows. It
+automatically detects whether you are inside or outside
+tmux and uses the appropriate mode.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../../getting-started/) for
+installation.
+:::
+
+![tmux-cli demo](/claude-code-tools/assets/tmux-cli-demo-short.gif)
+
+## What It Does
+
+`tmux-cli` gives Claude Code (or any CLI agent) the
+ability to **launch**, **send input to**, **capture output
+from**, and **kill** programs running in tmux panes. This
+enables powerful multi-pane workflows where an agent can
+orchestrate several terminal applications simultaneously.
+
+### Auto-Detection
+
+- **Inside tmux (Local Mode)** -- Manages panes in your
+  current tmux window.
+- **Outside tmux (Remote Mode)** -- Creates and manages a
+  separate tmux session with windows.
+
+## Key Features
+
+- Launch shells and programs in new tmux panes
+- Send keystrokes (with configurable delay and
+  auto-retry)
+- Capture pane output for inspection
+- Wait for a pane to become idle before proceeding
+- Execute a command and get its exit code as JSON
+- Interrupt (`Ctrl+C`) or send `Escape` to any pane
+- Safety guard: cannot kill your own pane
+
+## Quick Start
+
+<Steps>
+
+1. **Always launch a shell first** to prevent losing
+   output when commands fail:
+
+   ```bash
+   tmux-cli launch "zsh"   # returns pane ID
+   ```
+
+2. **Run commands** in the shell pane:
+
+   ```bash
+   tmux-cli send "pytest tests/" --pane=2
+   ```
+
+3. **Wait and capture** the result:
+
+   ```bash
+   tmux-cli wait_idle --pane=2
+   tmux-cli capture --pane=2
+   ```
+
+4. **Clean up** when done:
+
+   ```bash
+   tmux-cli kill --pane=2
+   ```
+
+</Steps>
+
+:::caution
+If you launch a command directly (not via a shell) and
+it errors, the pane closes immediately and you lose all
+output. Always launch `zsh` first.
+:::
+
+## Typical Workflow
+
+```bash
+# 1. Launch a shell
+tmux-cli launch "zsh"          # => pane ID, e.g. 2
+
+# 2. Run your command inside that shell
+tmux-cli send "python script.py" --pane=2
+
+# 3. Interact and inspect
+tmux-cli send "some input" --pane=2
+tmux-cli capture --pane=2
+
+# 4. Clean up
+tmux-cli kill --pane=2
+```
+
+## Learn More
+
+- [Command Reference](./reference/) -- Full list of
+  all `tmux-cli` commands and their options.
+- [Resources](./resources/) -- Curated links to
+  articles, videos, and tools for advanced tmux +
+  Claude Code integration.

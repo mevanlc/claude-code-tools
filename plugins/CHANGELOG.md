@@ -1,5 +1,15 @@
 # Plugin Changelog
 
+## 2026-02-11
+
+### aichat, voice, safety-hooks
+
+- fix: use `if/then/else/fi` bash wrapper for all hook commands
+  - Only missing hook files fail open (approve); runtime errors
+    still propagate (fail closed)
+  - Prevents silent safety bypass when python3 crashes
+  - Addresses Codex review on PR #55
+
 ## 2026-02-04
 
 ### safety-hooks

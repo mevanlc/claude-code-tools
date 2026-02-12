@@ -1,0 +1,162 @@
+---
+title: "env-safe — Safe .env Inspection"
+description: >
+  Safely inspect .env files without exposing
+  sensitive values. The approved alternative when
+  safety-hooks blocks direct .env access.
+---
+
+import { Tabs, TabItem, Steps, Card, CardGrid } from
+  "@astrojs/starlight/components";
+
+`env-safe` lets you inspect `.env` files without
+ever exposing the actual values of your environment
+variables. It is designed for Claude Code and other
+automated tools that need to work with environment
+files without accidentally leaking secrets.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../getting-started/) for installation.
+:::
+
+## Why env-safe Exists
+
+The [safety-hooks](../plugins-detail/safety-hooks/)
+plugin blocks Claude Code from directly accessing
+`.env` files -- no reading, writing, or editing is
+allowed. This prevents both accidental exposure of
+API keys and unintended modifications.
+
+`env-safe` is the **only approved way** for Claude
+Code to inspect environment configuration safely.
+Any modifications to `.env` files must be done
+manually, outside of Claude Code.
+
+:::tip
+If you see Claude Code being blocked from reading
+a `.env` file, tell it to use `env-safe` instead.
+The safety hooks automatically suggest this.
+:::
+
+## Commands
+
+<Tabs>
+  <TabItem label="list">
+    ### env-safe list
+
+    List all environment variable keys defined in
+    the `.env` file:
+
+    ```bash
+    env-safe list
+    ```
+
+    Example output:
+
+    ```
+    DATABASE_URL
+    API_KEY
+    SECRET_TOKEN
+    DEBUG_MODE
+    ```
+
+    Add the `--status` flag to see whether each
+    variable is defined or empty:
+
+    ```bash
+    env-safe list --status
+    ```
+
+    Example output:
+
+    ```
+    DATABASE_URL: defined
+    API_KEY: defined
+    SECRET_TOKEN: empty
+    DEBUG_MODE: defined
+    ```
+  </TabItem>
+
+  <TabItem label="check">
+    ### env-safe check
+
+    Check whether a specific key exists in the
+    `.env` file:
+
+    ```bash
+    env-safe check API_KEY
+    ```
+
+    Returns whether the key exists and whether it
+    has a value assigned, without revealing the
+    value itself.
+  </TabItem>
+
+  <TabItem label="count">
+    ### env-safe count
+
+    Count the total, defined, and empty variables:
+
+    ```bash
+    env-safe count
+    ```
+
+    Example output:
+
+    ```
+    Total: 12
+    Defined: 10
+    Empty: 2
+    ```
+  </TabItem>
+
+  <TabItem label="validate">
+    ### env-safe validate
+
+    Validate the syntax of your `.env` file:
+
+    ```bash
+    env-safe validate
+    ```
+
+    Checks for common syntax issues like missing
+    equals signs, invalid key names, or malformed
+    lines. Reports any problems found without
+    exposing values.
+  </TabItem>
+</Tabs>
+
+## Key Features
+
+<CardGrid>
+  <Card title="No Value Exposure">
+    Never displays actual environment variable
+    values. Only key names and
+    defined/empty status are shown.
+  </Card>
+
+  <Card title="Safe Inspection">
+    Check which keys exist and whether they have
+    values, all without any security risk.
+  </Card>
+
+  <Card title="Syntax Validation">
+    Verify that your `.env` file format is correct
+    before you deploy or run your application.
+  </Card>
+
+  <Card title="Claude Code Integration">
+    Works hand-in-hand with the safety-hooks plugin
+    to provide a safe alternative to direct
+    `.env` access.
+  </Card>
+</CardGrid>
+
+## Full Help
+
+For all available options:
+
+```bash
+env-safe --help
+```

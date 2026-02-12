@@ -1,0 +1,115 @@
+---
+title: "Installation & Setup"
+description: >-
+  Quick start guide for installing claude-code-tools
+  and the aichat-search engine.
+---
+
+import { Steps } from "@astrojs/starlight/components";
+
+<style>{`
+  table {
+    display: block;
+    overflow-x: auto;
+  }
+  table td:first-child,
+  table th:first-child {
+    white-space: nowrap;
+  }
+`}</style>
+
+## Prerequisites
+
+- **Python 3.11+**
+- **Node.js 16+** (required for action menus)
+
+## Installation
+
+<Steps>
+
+1. **Install the Python package**
+
+   This includes all CLI commands and pre-installed
+   Node.js dependencies -- no `npm install` needed.
+
+   ```bash
+   uv tool install claude-code-tools
+   ```
+
+   To include the optional **Google Docs** and
+   **Google Sheets** integrations:
+
+   ```bash
+   uv tool install "claude-code-tools[gdocs]"
+   ```
+
+   To **upgrade** an existing installation, add
+   `--force`:
+
+   ```bash
+   uv tool install --force claude-code-tools
+   # or with the gdocs extra:
+   uv tool install --force "claude-code-tools[gdocs]"
+   ```
+
+2. **Install the Rust-based search engine**
+
+   `aichat-search` powers both the human TUI and
+   agent search. Choose **one** method:
+
+   - **Homebrew** (macOS / Linux):
+     `brew install pchalasani/tap/aichat-search`
+   - **Cargo** (compiles from source, ~5 min):
+     `cargo install aichat-search`
+   - **Pre-built binary**: download from
+     [Releases](https://github.com/pchalasani/claude-code-tools/releases)
+     (look for `rust-v*` releases)
+
+   :::note
+   Without `aichat-search`, search will not work,
+   but other `aichat` commands (resume, trim,
+   rollover, etc.) still function normally.
+   :::
+
+3. **Install the associated Claude Code plugins**
+
+   The tools above come with companion plugins that
+   add hooks, skills, agents, and slash commands to
+   Claude Code. These extend the CLI tools with
+   in-session capabilities like `>resume` triggers,
+   session search, safety guards, and more.
+
+   See the **[Plugins](../plugins/)** page for
+   installation instructions.
+
+</Steps>
+
+## What You Get
+
+Five commands are installed by default:
+
+| Command | Description |
+|---------|-------------|
+| [`aichat`](/claude-code-tools/tools/aichat/) | Session continuation without compaction, full-text search (for humans and agents) |
+| [`tmux-cli`](/claude-code-tools/tools/tmux-cli/) | Terminal automation ("Playwright for terminals") |
+| [`fix-session`](/claude-code-tools/tools/fix-session/) | Repair broken conversation chains |
+| [`vault`](/claude-code-tools/tools/vault/) | Encrypted `.env` backup and sync |
+| [`env-safe`](/claude-code-tools/tools/env-safe/) | Safe `.env` inspection |
+
+With the `[gdocs]` extra, you also get:
+
+| Command | Description |
+|---------|-------------|
+| [`md2gdoc`](/claude-code-tools/integrations/google-docs/) | Convert Markdown to a Google Doc |
+| [`gdoc2md`](/claude-code-tools/integrations/google-docs/) | Convert a Google Doc to Markdown |
+| [`csv2gsheet`](/claude-code-tools/integrations/google-sheets/) | Upload CSV to a Google Sheet |
+| [`gsheet2csv`](/claude-code-tools/integrations/google-sheets/) | Download a Google Sheet as CSV |
+
+## Next Steps
+
+- **[Plugins](/claude-code-tools/getting-started/plugins/)**
+  -- install Claude Code hooks, skills, and agents.
+- **[aichat overview](/claude-code-tools/tools/aichat/)**
+  -- learn about session search and resume.
+- **[Safety Hooks](/claude-code-tools/plugins-detail/safety-hooks/)**
+  -- protect against destructive operations.

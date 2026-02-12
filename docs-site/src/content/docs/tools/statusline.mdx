@@ -1,0 +1,110 @@
+---
+title: "Status Line"
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+The Claude Code status line shows live session context
+usage directly in your terminal status bar. It uses a
+powerline-style display with color-coded context
+indicators so you always know how much context remains.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../getting-started/) for
+installation.
+:::
+
+## What It Does
+
+The status line is a shell script
+(`scripts/statusline.sh`) that reads JSON input from
+Claude Code (available since v2.1.6+) and renders a
+compact, color-coded bar showing:
+
+- **Model name** (e.g. `opus-4`, `sonnet`)
+- **Current directory**
+- **Git branch and status** (staged, modified,
+  ahead/behind)
+- **Context usage** as a progress bar with percentage
+
+## Color States
+
+The context progress bar changes color based on usage
+level:
+
+### Green (0--70%)
+
+Plenty of context remaining.
+
+![green](/claude-code-tools/assets/statusline-green.png)
+
+### Yellow (71--85%)
+
+Context is filling up -- consider wrapping up the
+current task or preparing to resume.
+
+![yellow](/claude-code-tools/assets/statusline-yellow.png)
+
+### Orange (86--95%)
+
+Context is running low -- finish the current task and
+resume soon.
+
+![orange](/claude-code-tools/assets/statusline-orange.png)
+
+### Red (96--100%)
+
+Context is nearly exhausted. The bar blinks to draw
+attention. Resume immediately.
+
+![red](/claude-code-tools/assets/statusline-red.png)
+
+## Setup
+
+<Steps>
+
+1. **Copy the script** to your Claude config directory:
+
+   ```bash
+   cp scripts/statusline.sh ~/.claude/
+   chmod +x ~/.claude/statusline.sh
+   ```
+
+2. **Add to `~/.claude/settings.json`:**
+
+   ```json
+   {
+     "statusLine": {
+       "type": "command",
+       "command": "~/.claude/statusline.sh"
+     }
+   }
+   ```
+
+</Steps>
+
+Requires `jq` and a
+[Nerd Font](https://www.nerdfonts.com/) for
+powerline symbols.
+
+## How It Works
+
+The script receives JSON on stdin with fields including:
+
+- `model` -- Current model name or object
+- `workspace.current_dir` -- Working directory
+- `context_window.used_percentage` -- Context usage
+  (0--100)
+
+It then:
+
+1. Extracts and cleans the model name.
+2. Reads git status from the working directory.
+3. Builds a powerline-style output with ANSI colors.
+4. Renders a 10-character progress bar for context
+   usage, color-coded by level.
+
+The model segment background is **green** when git is
+clean and **yellow** when there are uncommitted changes,
+giving you a quick visual indicator of repository state.

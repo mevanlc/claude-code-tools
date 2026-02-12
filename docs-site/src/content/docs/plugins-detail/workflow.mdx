@@ -1,0 +1,110 @@
+---
+title: "Workflow Plugin"
+description: >
+  Work logging, code walk-throughs, issue specs,
+  and browser-based UI testing for Claude Code.
+---
+
+import { Tabs, TabItem, Steps, Card, CardGrid } from
+  "@astrojs/starlight/components";
+
+The `workflow` plugin provides a collection of
+skills and agents to support everyday development
+workflows in Claude Code -- from logging your
+progress to walking through code changes and
+testing your UI in a real browser.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../getting-started/) for installation.
+:::
+
+Install the plugin via the Claude Code marketplace:
+
+```bash
+claude plugin install workflow@cctools-plugins
+```
+
+## Skills and Agents
+
+| Type | Name | What It Does |
+|------|------|--------------|
+| Skill | `/code-walk-thru` | Walk through files in your editor to explain code or show changes |
+| Skill | `/log-work` | Log work progress to `WORKLOG/YYYYMMDD.md` |
+| Skill | `/make-issue-spec` | Create task specs at `issues/YYYYMMDD-topic.md` |
+| Agent | `ui-tester` | Browser-based UI testing via Chrome DevTools MCP |
+
+## Skill Details
+
+### /code-walk-thru
+
+Walks through files in your editor to explain code
+or demonstrate changes. Useful for:
+
+- Onboarding teammates to a codebase
+- Reviewing what changed in a feature branch
+- Creating guided tours of complex logic
+
+Simply invoke the skill and describe which files
+or changes you want to walk through:
+
+```
+/code-walk-thru walk me through the auth module
+```
+
+### /log-work
+
+Logs your work progress to a daily file at
+`WORKLOG/YYYYMMDD.md`. This creates a structured
+record of what you accomplished, making it easy
+to write status updates, standup notes, or
+retrospectives.
+
+```
+/log-work implemented user auth and wrote tests
+```
+
+Each entry is appended to the day's log file with
+a timestamp.
+
+### /make-issue-spec
+
+Creates structured task specifications at
+`issues/YYYYMMDD-topic.md`. Use this to document
+upcoming work, bugs, or feature requests in a
+consistent format.
+
+```
+/make-issue-spec add pagination to the users API
+```
+
+The generated spec includes sections for the
+problem description, proposed solution, acceptance
+criteria, and implementation notes.
+
+### ui-tester Agent
+
+A sub-agent that performs browser-based UI testing
+using the Chrome DevTools MCP (Model Context
+Protocol) server. It can:
+
+- Navigate to pages and take screenshots
+- Click buttons, fill forms, and interact with
+  the UI
+- Verify visual elements and page content
+- Run end-to-end test scenarios
+
+:::tip
+The `ui-tester` agent requires a Chrome DevTools
+MCP server to be configured. Ask Claude Code to
+help you set this up if it is not already
+configured.
+:::
+
+To invoke the agent, describe the UI test you
+want to run:
+
+```
+Use your ui-tester agent to verify the login
+page renders correctly and the form submits.
+```

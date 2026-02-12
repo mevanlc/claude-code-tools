@@ -1,0 +1,146 @@
+---
+title: "Development"
+description: >
+  Architecture overview, prerequisites, and setup
+  for developing claude-code-tools.
+---
+
+import {
+  Steps,
+  LinkCard,
+  CardGrid,
+} from '@astrojs/starlight/components';
+
+## Architecture
+
+The `aichat` command has three layers:
+
+- **Python** (`claude_code_tools/`) -- CLI entry
+  points, backend logic, session parsing
+- **Rust** (`rust-search-ui/`) -- search TUI with
+  Tantivy full-text search engine
+- **Node.js** (`node_ui/`) -- action menus (resume,
+  export, trim, etc.)
+
+### Flow Diagram
+
+```
+Python CLI (aichat search)
+    |
+    v
+Rust binary (aichat-search)
+    |  Tantivy full-text search
+    |  Interactive TUI for humans
+    v
+User selects session
+    |
+    v
+Node.js menus (node_ui/)
+    |  Resume, export, trim, rollover options
+    v
+Python backend
+    |  Session parsing, cloning, trimming
+    v
+New or modified session
+```
+
+## Prerequisites
+
+- **Python 3.11+**
+- **UV** --
+  `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- **Rust/Cargo** --
+  `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
+- **Node.js 16+** -- required for action menus
+
+## Setup
+
+<Steps>
+
+1. **Clone the repository:**
+
+   ```bash
+   git clone \
+     https://github.com/pchalasani/claude-code-tools
+   cd claude-code-tools
+   ```
+
+2. **Create a virtual environment:**
+
+   ```bash
+   uv venv --python 3.11
+   source .venv/bin/activate
+   ```
+
+3. **Install dependencies:**
+
+   ```bash
+   uv sync
+   cd node_ui && npm install && cd ..
+   ```
+
+4. **Install in editable mode:**
+
+   ```bash
+   make install              # Python (editable)
+   make install-gdocs        # with Google Docs/Sheets extras
+   make aichat-search-install  # Rust binary
+   ```
+
+</Steps>
+
+After setup, Python changes apply immediately
+(editable mode). For Rust changes, re-run
+`make aichat-search-install`. Node.js runs directly
+from `node_ui/` -- no build step needed.
+
+## Starlight Docs
+
+The documentation site lives in `docs-site/` and
+is built with [Astro Starlight](https://starlight.astro.build/).
+It deploys automatically to GitHub Pages on push
+to main via `.github/workflows/deploy-docs.yml`.
+
+To work on the docs locally:
+
+```bash
+# Start dev server with hot reload
+make docs-dev
+
+# Build the site (output in docs-site/dist/)
+make docs-build
+
+# Preview the built site
+make docs-preview
+```
+
+The content pages are in
+`docs-site/src/content/docs/`. Pages using Starlight
+components (Tabs, Steps, etc.) must be `.mdx`; plain
+markdown pages can be `.md`. The sidebar structure
+is configured in `docs-site/astro.config.mjs`.
+
+## Development Topics
+
+<CardGrid>
+  <LinkCard
+    title="Contributing"
+    description="Fork, branch, test, and open a pull request."
+    href="/claude-code-tools/development/contributing/"
+  />
+  <LinkCard
+    title="Make Commands"
+    description="All available Make targets grouped by category."
+    href="/claude-code-tools/development/make-commands/"
+  />
+  <LinkCard
+    title="Publishing"
+    description="Release Python packages to PyPI and Rust binaries to crates.io."
+    href="/claude-code-tools/development/publishing/"
+  />
+  <LinkCard
+    title="Testing"
+    description="How to test changes across the Python, Rust, and Node.js layers."
+    href="/claude-code-tools/development/testing/"
+  />
+</CardGrid>

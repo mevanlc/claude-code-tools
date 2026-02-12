@@ -1,4 +1,4 @@
-.PHONY: install release patch minor major dev-install help clean all-patch all-minor all-major release-github lmsh lmsh-install lmsh-publish aichat-search aichat-search-install aichat-search-release aichat-search-patch aichat-search-minor aichat-search-major aichat-search-publish fix-session-metadata fix-session-metadata-apply delete-helper-sessions delete-helper-sessions-apply prep-node update-homebrew
+.PHONY: install release patch minor major dev-install help clean all-patch all-minor all-major release-github lmsh lmsh-install lmsh-publish aichat-search aichat-search-install aichat-search-release aichat-search-patch aichat-search-minor aichat-search-major aichat-search-publish fix-session-metadata fix-session-metadata-apply delete-helper-sessions delete-helper-sessions-apply prep-node update-homebrew docs-dev docs-build docs-preview
 
 help:
 	@echo "Available commands:"
@@ -245,3 +245,16 @@ update-homebrew:
 		exit 1; \
 	fi
 	@./scripts/update-homebrew-formula.sh $(VERSION)
+
+docs-dev:
+	@echo "Starting docs dev server..."
+	@cd docs-site && npm run dev
+
+docs-build:
+	@echo "Building docs..."
+	@cd docs-site && npm run build
+	@echo "Docs built to docs-site/dist/"
+
+docs-preview:
+	@echo "Previewing docs..."
+	@cd docs-site && npm run preview

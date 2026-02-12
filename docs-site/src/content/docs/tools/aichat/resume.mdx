@@ -1,0 +1,189 @@
+---
+title: "Resume"
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+<style>{`
+  table {
+    display: block;
+    overflow-x: auto;
+  }
+  table td:first-child,
+  table th:first-child {
+    white-space: nowrap;
+  }
+`}</style>
+
+`aichat resume` lets you continue sessions with
+lineage-based chaining for better control than
+compaction alone. Compaction preserves full history on
+disk but reduces the active API context to a lossy
+summary. With `aichat resume`, you get a fresh session
+that links back to every ancestor with explicit lineage
+pointers and tools to recover any detail on demand.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../../getting-started/) for
+installation.
+:::
+
+## Demo
+
+<video controls width="100%">
+  <source src="https://github.com/user-attachments/assets/310dfa5b-a13b-4a2b-aef8-f73954ef8fe9" type="video/mp4" />
+</video>
+
+## Resume strategies
+
+When you resume a session, you choose one of these
+strategies:
+
+| Strategy | What it does | When to use |
+|----------|--------------|-------------|
+| **Resume as-is** | Open the session directly with `claude --resume` | Still have context headroom |
+| **Clone** | Copy session file, resume the clone | Want a safety copy first |
+| **Trim** | Truncate bloated tool outputs and early messages | Quick fix, frees 30-50% |
+| **Smart trim** | AI decides what is safe to cut | Surgical precision needed |
+| **Rollover** | Fresh session with lineage pointers | Clean slate, full history preserved |
+
+**Rollover** is the most frequently used strategy.
+See [Rollover Details](./rollover-details/) for a
+deep dive on how it works.
+
+## Three ways to access the resume options
+
+<Tabs>
+  <TabItem label="In-Session Trigger">
+    While inside a Claude Code session, when you are
+    close to filling up context, type:
+
+    ```bash
+    >resume
+    ```
+
+    (Or `>continue`, `>handoff` -- the `>` prefix is
+    required.)
+
+    This triggers a `UserPromptSubmit` hook that
+    blocks handling by Claude Code (no further tokens
+    consumed), copies the current session ID to your
+    clipboard, and shows instructions to quit and run
+    `aichat resume <paste>`.
+
+    Requires the `aichat`
+    [plugin](../../../getting-started/plugins/).
+  </TabItem>
+  <TabItem label="Search TUI">
+    Run `aichat search`, select a session, then choose
+    a resume action from the menu:
+
+    ```bash
+    aichat search "my topic"
+    ```
+
+    See the [Search](./search/) page for details.
+  </TabItem>
+  <TabItem label="Direct CLI">
+    Use the `resume` subcommand directly:
+
+    ```bash
+    # Resume the latest session for this project
+    aichat resume
+
+    # Resume a specific session by ID
+    aichat resume abc123-def456
+    ```
+  </TabItem>
+</Tabs>
+
+## CLI usage
+
+```bash
+# Auto-find latest session for current project/branch
+aichat resume
+
+# Resume a specific session (opens resume menu)
+aichat resume <session_id>
+```
+
+The resume menu presents the strategy options listed
+above. Pick one and the tool handles cloning,
+trimming, or rollover automatically.
+
+## Rollover options
+
+The `rollover` subcommand gives direct access to
+rollover with more control:
+
+```bash
+# Interactive rollover (shows lineage, pick options)
+aichat rollover
+
+# Quick rollover -- lineage only, no summarization
+aichat rollover abc123 --quick
+
+# Rollover with custom context-extraction prompt
+aichat rollover abc123 -p "Focus on the auth changes"
+```
+
+:::tip
+The `--quick` flag skips the context-extraction step
+so the new session starts immediately. You can then
+instruct the agent to pull specific context from the
+lineage as needed.
+:::
+
+## Related commands
+
+| Command | Description |
+|---------|-------------|
+| `aichat lineage [session]` | Show the parent lineage chain |
+| `aichat trim [session]` | Trim session (interactive or direct) |
+| `aichat rollover [session]` | Rollover to fresh session |
+| `aichat clone [session]` | Clone a session file |
+
+:::note[Why not just compact and read the session file?]
+Since compaction preserves full history on disk, you might
+wonder: why not just stay in the same session and read the
+session file when you need old details? A few reasons:
+
+- **Unbounded file growth** -- Compaction only *adds*
+  records (a boundary marker + summary). It never deletes.
+  After several compactions the session file grows large,
+  making it progressively harder to parse and recover
+  specific details.
+- **Summary-of-summary degradation** -- Each compaction
+  summarizes the previous summary plus new work. This
+  compounds lossy compression -- details degrade with
+  every cycle.
+- **No built-in recovery path** -- After compaction the
+  agent only has the summary in its active context. It has
+  no instructions, lineage pointers, or tools to go read
+  the session file for missing details.
+- **Curated context** -- Rollover lets you (or an agent)
+  inject a *structured* summary into a fresh session,
+  often higher quality than what automatic compaction
+  produces. Each session's file stays bounded and frozen,
+  making it a stable artifact for future reference.
+:::
+
+## How lineage works
+
+Every resumed session carries metadata linking it back
+to its parent:
+
+```json
+{
+  "continue_metadata": {
+    "parent_session_file": "/path/to/parent.jsonl",
+    "parent_session_id": "abc123-...",
+    "continued_at": "2025-12-19T..."
+  }
+}
+```
+
+This creates a linked chain that the agent can traverse
+to recover any prior context. For the full technical
+details, see [Rollover Details](./rollover-details/).

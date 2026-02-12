@@ -1,0 +1,149 @@
+---
+title: "Google Docs Tools"
+description: >
+  Upload Markdown as native Google Docs (md2gdoc) and
+  download Google Docs as Markdown (gdoc2md).
+---
+
+import {
+  Tabs,
+  TabItem,
+  Steps,
+} from '@astrojs/starlight/components';
+
+## Overview
+
+When working with CLI agents like Claude Code on
+writing projects, the most natural generation format
+is Markdown. But iterating on those docs via Google
+Docs is painful -- uploading a Markdown file to
+Google Drive with proper formatting requires multiple
+manual steps.
+
+`md2gdoc` reduces this to one command.
+`gdoc2md` does the reverse.
+
+## Installation
+
+These tools require additional dependencies. Install
+with the `gdocs` extra:
+
+```bash
+uv tool install 'claude-code-tools[gdocs]'
+```
+
+## First-Time Setup
+
+<Steps>
+
+1. Go to
+   [Google Cloud Console](https://console.cloud.google.com/)
+
+2. Create or select a project and enable the
+   **Google Drive API** and the **Google Docs API**
+
+3. Go to **APIs & Services** > **Credentials** >
+   **Create Credentials** > **OAuth client ID**
+
+4. Choose **Desktop app**, then download the JSON
+   file
+
+5. Save it as `.gdoc-credentials.json` in your
+   project directory
+
+6. First run will open a browser for OAuth consent
+   (one-time per project)
+
+</Steps>
+
+:::tip
+Credentials are project-specific
+(`.gdoc-credentials.json` and `.gdoc-token.json` in
+the current directory), so different projects can use
+different Google accounts.
+:::
+
+## Usage
+
+<Tabs>
+<TabItem label="md2gdoc (Upload)">
+
+Upload Markdown files as native Google Docs:
+
+```bash
+# Upload to root of Drive
+md2gdoc report.md
+
+# Upload to a specific folder
+md2gdoc report.md --folder "Perf/Reports"
+
+# Upload with a custom name
+md2gdoc report.md --name "Q4 Summary"
+```
+
+### Conflict Handling
+
+If a file with the same name already exists,
+`--on-existing` controls behavior:
+
+- `ask` (default) -- prompt for action
+- `version` -- auto-add suffix
+  (`report-1`, `report-2`, etc.)
+- `overwrite` -- replace existing file
+
+```bash
+md2gdoc report.md --on-existing overwrite
+```
+
+### Features
+
+- Native markdown conversion (same quality as manual
+  upload + "Open in Docs")
+- **Image upload** -- local images referenced in
+  markdown (e.g. `![alt](diagram.png)`) are uploaded
+  to Drive at full resolution, then inserted into
+  the Google Doc with proper sizing
+- `--max-image-width` controls display width in
+  inches (default: 6.5 = full page width)
+- `--no-images` skips image processing entirely
+- Follows Drive shortcuts to shared folders
+- Creates folders if they do not exist
+
+</TabItem>
+<TabItem label="gdoc2md (Download)">
+
+Download Google Docs as Markdown files:
+
+```bash
+# Download from root
+gdoc2md "My Document"
+
+# Download from a specific folder
+gdoc2md "My Document" --folder "PNL/Reports"
+
+# Save with a custom name
+gdoc2md "My Document" -o report.md
+
+# List docs in a folder
+gdoc2md --list --folder PNL
+```
+
+### Image Handling
+
+By default, embedded images are extracted to local
+files (e.g. `report_001.png`, `report_002.png`)
+alongside the markdown, with references rewritten
+to use local paths.
+
+- Default -- extract images to files
+- `--no-images` -- strip images to placeholders
+- `--keep-base64` -- keep base64 data inline
+
+</TabItem>
+</Tabs>
+
+## See Also
+
+- [Google Sheets Tools](../google-sheets/) -- upload
+  CSV to Sheets and download Sheets as CSV, using
+  the same OAuth credentials

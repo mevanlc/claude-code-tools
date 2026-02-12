@@ -1,0 +1,140 @@
+---
+title: "Search"
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+`aichat search` provides super-fast full-text search
+across all your Claude Code and Codex CLI sessions,
+powered by a Rust/Tantivy search engine. It offers a
+pleasant TUI for interactive browsing and a `--json`
+mode for agent consumption.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../../getting-started/) for
+installation.
+:::
+
+## Why not grep?
+
+Session chains get long. You might have 50+ sessions
+in a lineage, each with thousands of lines. Grepping
+through JSONL files does not scale. `aichat-search`
+uses [Tantivy](https://github.com/quickwit-oss/tantivy)
+(the engine behind Quickwit) to index sessions on first
+run, then returns results in milliseconds. The index
+updates incrementally on every `aichat` command.
+
+## Install the search engine
+
+The search engine is a separate Rust binary. Pick one
+method:
+
+```bash
+# Homebrew (macOS / Linux)
+brew install pchalasani/tap/aichat-search
+
+# Cargo (any platform with Rust toolchain)
+cargo install aichat-search
+```
+
+## Demo
+
+![aichat-search demo](/claude-code-tools/assets/aichat-search-asciinema.gif)
+
+## Usage
+
+<Tabs>
+  <TabItem label="Interactive TUI">
+    Launch the TUI with an optional pre-filled query:
+
+    ```bash
+    # Open TUI, type query interactively
+    aichat search
+
+    # Pre-fill a query
+    aichat search "langroid agent"
+    ```
+
+    Inside the TUI you can refine the query, scroll
+    results, and select a session to perform
+    [actions](../actions/) such as resume, export,
+    or view.
+  </TabItem>
+  <TabItem label="JSON for agents">
+    Use `--json` to get JSONL output suitable for
+    piping to `jq`:
+
+    ```bash
+    # Search with JSONL output
+    aichat search "MCP server" --json
+
+    # Pipe to jq for filtering
+    aichat search "auth" --json | jq '.project'
+    ```
+
+    Each line is a JSON object with fields:
+    `session_id`, `agent`, `project`, `branch`,
+    `cwd`, `lines`, `created`, `modified`,
+    `first_msg`, `last_msg`, `file_path`,
+    `derivation_type`, `is_sidechain`, `snippet`.
+  </TabItem>
+</Tabs>
+
+## Search options
+
+| Flag | Description |
+|------|-------------|
+| `-g`, `--global` | Search all projects (not just current directory) |
+| `--dir PATH` | Filter to a specific directory (overrides `-g`) |
+| `--branch NAME` | Filter to a specific git branch |
+| `-n`, `--num-results N` | Limit number of results |
+| `--agent claude\|codex\|all` | Filter by agent type |
+| `--after DATE` | Sessions modified after date |
+| `--before DATE` | Sessions modified before date |
+| `--min-lines N` | Only sessions with at least N lines |
+| `--no-original` | Exclude original sessions |
+| `--no-trimmed` | Exclude trimmed sessions |
+| `--no-rollover` | Exclude rollover sessions |
+| `--sub-agent` | Include sub-agent sessions |
+| `--live` | Show only currently running sessions |
+| `--by-time` | Sort by last-modified (default: relevance) |
+| `--json` | JSONL output for agents |
+
+Date formats: `YYYYMMDD`, `YYYY-MM-DD`, `MM/DD/YY`,
+`MM/DD/YYYY`. Optional time suffix: `T16:45:23`,
+`T16:45`, `T16`.
+
+## What gets indexed
+
+The search engine indexes JSONL session files from:
+
+- `~/.claude/projects/` -- Claude Code sessions
+- `~/.codex/` -- Codex CLI sessions
+
+Custom locations can be set with `--claude-home` and
+`--codex-home` flags, or the `CLAUDE_CONFIG_DIR` and
+`CODEX_HOME` environment variables.
+
+## Examples
+
+```bash
+# Global search, recent sessions only
+aichat search -g --after 01/15/26
+
+# Filter to a specific project directory
+aichat search --dir ~/Git/myproject
+
+# Only Claude sessions with at least 50 lines
+aichat search --agent claude --min-lines 50
+
+# JSONL output sorted by time
+aichat search --json --by-time "refactor"
+```
+
+:::tip
+After selecting a session in the TUI, you can
+perform [session actions](../actions/) -- resume,
+export, copy, query, and more.
+:::

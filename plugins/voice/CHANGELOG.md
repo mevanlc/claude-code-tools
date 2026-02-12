@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.10.4] - 2026-02-11
+
+### Fixed
+
+- **Safer hook file-existence check**: Replaced `&&/||` bash pattern
+  with `if/then/else/fi` so only missing files fail open. Runtime
+  errors (import failures, missing python3) now properly propagate
+  instead of silently approving.
+
 ## [1.10.3] - 2026-02-06
 
 ### Fixed

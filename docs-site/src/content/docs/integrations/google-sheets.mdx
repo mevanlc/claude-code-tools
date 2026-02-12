@@ -1,0 +1,94 @@
+---
+title: "Google Sheets Tools"
+description: >
+  Upload CSV files to Google Sheets (csv2gsheet)
+  and download Sheets as CSV (gsheet2csv).
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Overview
+
+Upload CSV files to Google Sheets and download
+Sheets as CSV. These tools use the same OAuth
+credentials as the
+[Google Docs tools](../google-docs/) -- see that
+page for first-time setup if you have not done it
+yet.
+
+## Installation
+
+Included with the `gdocs` extra:
+
+```bash
+uv tool install 'claude-code-tools[gdocs]'
+```
+
+## Usage
+
+<Tabs>
+<TabItem label="csv2gsheet (Upload)">
+
+Upload CSV files to Google Sheets:
+
+```bash
+# Upload to root of Drive
+csv2gsheet data.csv
+
+# Upload to a specific folder
+csv2gsheet data.csv --folder "Reports/Data"
+
+# Upload with a custom name
+csv2gsheet data.csv --name "Q4 Sales"
+
+# Overwrite if the file already exists
+csv2gsheet data.csv --on-existing overwrite
+```
+
+### Conflict Handling
+
+Same as `md2gdoc`:
+
+- `ask` (default) -- prompt for action
+- `version` -- auto-add suffix
+- `overwrite` -- replace existing file
+
+</TabItem>
+<TabItem label="gsheet2csv (Download)">
+
+Download Google Sheets as CSV:
+
+```bash
+# Download from root
+gsheet2csv "My Spreadsheet"
+
+# Download from a specific folder
+gsheet2csv "My Spreadsheet" --folder "Reports"
+
+# Save with a custom output name
+gsheet2csv "My Spreadsheet" -o data.csv
+
+# Download a specific tab
+gsheet2csv "My Spreadsheet" --sheet "Sheet2"
+
+# List spreadsheets in a folder
+gsheet2csv --list --folder Reports
+
+# List all tabs in a spreadsheet
+gsheet2csv "My Spreadsheet" --list-tabs
+```
+
+:::tip
+For multi-tab spreadsheets, use `--sheet` to export
+a specific tab. The default exports the first tab.
+:::
+
+</TabItem>
+</Tabs>
+
+## See Also
+
+- [Google Docs Tools](../google-docs/) -- upload
+  Markdown as native Google Docs and download
+  Google Docs as Markdown (includes OAuth setup
+  instructions)

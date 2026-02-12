@@ -1,0 +1,121 @@
+---
+title: "Session Actions"
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+When you select a session -- either from the
+[search TUI](./search/) or via `aichat menu` --
+an action menu appears with operations you can
+perform on that session.
+
+:::note[Installation]
+Part of the `claude-code-tools` package.
+See [Quick Start](../../../getting-started/) for
+installation.
+:::
+
+## Available actions
+
+### Non-launch actions
+
+These actions operate on the session file without
+starting a new Claude Code / Codex session:
+
+| Action | Description |
+|--------|-------------|
+| **Show session file path** | Print the full path to the JSONL session file |
+| **Copy session file** | Copy the session file to a destination path |
+| **Export to text file** | Export the session as a readable `.txt` file |
+| **Query this session** | Ask a question about the session content (uses an AI agent to read and summarize) |
+
+### Launch actions
+
+These actions start or continue a Claude Code or
+Codex session:
+
+| Action | Description |
+|--------|-------------|
+| **Resume/trim session** | Opens the [resume submenu](#resume-submenu) |
+
+:::tip
+Sub-agent (sidechain) sessions only show non-launch
+actions, since they cannot be resumed directly.
+:::
+
+## Resume submenu
+
+When you select **Resume/trim session**, a submenu
+appears with these options:
+
+| Option | Description |
+|--------|-------------|
+| **Resume as-is** | Open the session with `claude --resume` |
+| **Clone session and resume clone** | Copy the file first, then resume the copy |
+| **Trim + resume** | Truncate large tool outputs and optionally assistant messages, then resume |
+| **Smart trim + resume** | Use an AI agent to decide what to trim, then resume |
+| **Rollover** | Hand off work to a fresh session with lineage |
+
+See the [Resume](./resume/) page for details on each
+strategy.
+
+## Accessing the action menu
+
+<Tabs>
+  <TabItem label="From search">
+    Select any session in the search TUI
+    (`aichat search`) and the action menu appears
+    automatically.
+  </TabItem>
+  <TabItem label="By session ID">
+    Pass a session ID directly to `aichat menu`:
+
+    ```bash
+    aichat menu abc123-def456
+    ```
+
+    Or use the shortcut (any unknown argument is
+    treated as a session ID):
+
+    ```bash
+    aichat abc123-def456
+    ```
+  </TabItem>
+  <TabItem label="Latest session">
+    Run `aichat` with no arguments to show the action
+    menu for the latest session(s) in the current
+    project:
+
+    ```bash
+    aichat
+    ```
+  </TabItem>
+</Tabs>
+
+## Query action
+
+The **Query this session** action lets you ask
+arbitrary questions about a session. It uses a
+headless AI agent to read the session file and return
+a focused answer. The default query is:
+
+> Summarize what was accomplished in this session
+
+You can replace this with any question, such as:
+
+- "What files were modified?"
+- "What was the final decision on the auth approach?"
+- "List all TODO items mentioned"
+
+## Export action
+
+The **Export to text file** action converts the JSONL
+session into a human-readable `.txt` file. By default,
+exports go to:
+
+```
+<project>/exported-sessions/<date>-session-<id>.txt
+```
+
+You can specify a custom destination path when
+prompted.
