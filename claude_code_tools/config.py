@@ -17,6 +17,14 @@ DEFAULTS = {
     # Model for Codex interactive session after rollover (full capability)
     # Empty string means use codex's default model
     "codex_default_model": "",
+    # Command to launch Claude (binary name or path)
+    "claude_command": "claude",
+    # Command to launch Codex (binary name or path)
+    "codex_command": "codex",
+    # Extra arguments to pass when resuming a Claude session (before the session ID)
+    "claude_resume_extra_args": [],
+    # Extra arguments to pass when resuming a Codex session (before the session ID)
+    "codex_resume_extra_args": [],
 }
 
 _config_cache: Optional[dict[str, Any]] = None
@@ -91,3 +99,45 @@ def codex_default_model() -> str:
     Returns empty string to use codex's default model.
     """
     return get("codex_default_model", DEFAULTS["codex_default_model"])
+
+
+def claude_command() -> str:
+    """Get the command/binary name used to launch Claude."""
+    return get("claude_command", DEFAULTS["claude_command"])
+
+
+def codex_command() -> str:
+    """Get the command/binary name used to launch Codex."""
+    return get("codex_command", DEFAULTS["codex_command"])
+
+
+def claude_resume_extra_args() -> list[str]:
+    """Get extra arguments passed when resuming a Claude session."""
+    val = get("claude_resume_extra_args", DEFAULTS["claude_resume_extra_args"])
+    return list(val) if val else []
+
+
+def codex_resume_extra_args() -> list[str]:
+    """Get extra arguments passed when resuming a Codex session."""
+    val = get("codex_resume_extra_args", DEFAULTS["codex_resume_extra_args"])
+    return list(val) if val else []
+
+
+def claude_resume_cmd(session_id: str) -> tuple[str, list[str]]:
+    """Build the full command to resume a Claude session.
+
+    Returns (binary, [binary, ...args, -r, session_id]).
+    """
+    cmd = claude_command()
+    args = [cmd] + claude_resume_extra_args() + ["-r", session_id]
+    return cmd, args
+
+
+def codex_resume_cmd(session_id: str) -> tuple[str, list[str]]:
+    """Build the full command to resume a Codex session.
+
+    Returns (binary, [binary, ...args, resume, session_id]).
+    """
+    cmd = codex_command()
+    args = [cmd] + codex_resume_extra_args() + ["resume", session_id]
+    return cmd, args

@@ -959,7 +959,9 @@ def resume_session(
         # Redirect prompts to stderr, commands to stdout
         if cwd and cwd != os.getcwd():
             print(f"cd {shlex.quote(cwd)}", file=sys.stdout)
-        print(f"codex resume {shlex.quote(session_id)}", file=sys.stdout)
+        from claude_code_tools import config
+        cmd, args = config.codex_resume_cmd(session_id)
+        print(' '.join(shlex.quote(a) for a in args), file=sys.stdout)
     else:
         # Interactive mode
         if cwd and cwd != os.getcwd():
@@ -977,7 +979,9 @@ def resume_session(
 
         # Execute codex resume
         try:
-            os.execvp("codex", ["codex", "resume", session_id])
+            from claude_code_tools import config
+            cmd, args = config.codex_resume_cmd(session_id)
+            os.execvp(cmd, args)
         except OSError as e:
             print(f"Error launching codex: {e}")
             sys.exit(1)

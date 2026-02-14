@@ -1200,10 +1200,13 @@ def move_session(session, new_project, agent):
         import subprocess
         os.chdir(new_project_path)
         console.print(f"\n[green]Switching to {new_project_path}...[/green]")
+        from claude_code_tools import config
         if detected_agent == "claude":
-            os.execvp("claude", ["claude", "--resume", session_id])
+            cmd, args = config.claude_resume_cmd(session_id)
+            os.execvp(cmd, args)
         else:
-            os.execvp("codex", ["codex", "resume", session_id])
+            cmd, args = config.codex_resume_cmd(session_id)
+            os.execvp(cmd, args)
     else:
         console.print(f"\n[dim]To resume later:[/dim]")
         console.print(f"  [cyan]{resume_cmd}[/cyan]")

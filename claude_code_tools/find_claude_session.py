@@ -1219,11 +1219,14 @@ def resume_session(session_id: str, project_path: str, shell_mode: bool = False,
             print(f'cd {shlex.quote(project_path)}')
         # Set CLAUDE_CONFIG_DIR environment variable if custom path specified
         # (either via CLI arg or already set via env var)
+        from claude_code_tools import config
+        cmd, args = config.claude_resume_cmd(session_id)
+        shell_cmd = ' '.join(shlex.quote(a) for a in args)
         if claude_home or os.environ.get('CLAUDE_CONFIG_DIR'):
             expanded_home = str(get_claude_home(claude_home).absolute())
-            print(f'CLAUDE_CONFIG_DIR={shlex.quote(expanded_home)} claude -r {shlex.quote(session_id)}')
+            print(f'CLAUDE_CONFIG_DIR={shlex.quote(expanded_home)} {shell_cmd}')
         else:
-            print(f'claude -r {shlex.quote(session_id)}')
+            print(shell_cmd)
         return
     
     # Check if we need to change directory
@@ -1275,13 +1278,15 @@ def resume_session(session_id: str, project_path: str, shell_mode: bool = False,
             os.environ['CLAUDE_CONFIG_DIR'] = expanded_home
 
         # Execute claude
-        os.execvp("claude", ["claude", "-r", session_id])
+        from claude_code_tools import config
+        cmd, args = config.claude_resume_cmd(session_id)
+        os.execvp(cmd, args)
         
     except FileNotFoundError:
         if RICH_AVAILABLE and console:
-            console.print("[red]Error:[/red] 'claude' command not found. Make sure Claude CLI is installed.")
+            console.print(f"[red]Error:[/red] '{cmd}' command not found. Make sure it is installed and in your PATH.")
         else:
-            print("Error: 'claude' command not found. Make sure Claude CLI is installed.", file=sys.stderr)
+            print(f"Error: '{cmd}' command not found. Make sure it is installed and in your PATH.", file=sys.stderr)
         sys.exit(1)
     except Exception as e:
         if RICH_AVAILABLE and console:
