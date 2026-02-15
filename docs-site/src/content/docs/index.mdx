@@ -10,13 +10,6 @@ hero:
     CLI tools, skills, agents, hooks, and plugins
     for enhancing productivity with Claude Code
     and other CLI coding agents.
-  image:
-    html: >-
-      <img
-        src="/claude-code-tools/assets/hero-logo.svg"
-        alt="claude-code-tools"
-        style="width:100%;max-width:420px;"
-      />
   actions:
     - text: Get Started
       link: /claude-code-tools/getting-started/
@@ -29,20 +22,21 @@ hero:
 ---
 
 <style>{`
-  /* Hero title: pixel-art block logo */
+  /* Hero title: NYC subway mosaic logo */
   [data-page-title] .hero h1,
   .hero h1 {
     font-size: 0 !important;
     color: transparent !important;
     line-height: 0 !important;
-    background-image: url('/claude-code-tools/assets/title-logo.svg');
+    background-image: url('/claude-code-tools/assets/logo-nyc-subway.png');
     background-repeat: no-repeat;
     background-size: contain;
     background-position: left center;
     width: 100%;
-    max-width: 605px;
-    aspect-ratio: 605 / 420;
-    filter: drop-shadow(0 0 12px rgba(212, 149, 106, 0.25));
+    max-width: 640px;
+    aspect-ratio: 3 / 2;
+    filter: drop-shadow(0 0 16px rgba(0, 0, 0, 0.4));
+    border-radius: 4px;
   }
 
   /* Style the tagline */
@@ -90,6 +84,10 @@ hero:
     border-radius: 8px;
   }
 `}</style>
+
+<p style="text-align:center; color:#a8a4bf; font-size:1.05rem; margin-bottom:0.5rem;">
+  Click any card below to jump to its docs.
+</p>
 
 <div class="retro-grid">
   <a href="/claude-code-tools/tools/aichat/">
