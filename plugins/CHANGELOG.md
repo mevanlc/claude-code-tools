@@ -1,5 +1,20 @@
 # Plugin Changelog
 
+## 2026-02-15
+
+### safety-hooks
+
+- feat: add `>allow-git` trigger to toggle staging/commit
+  approval per session
+  - `>allow-git` allows both staging modified files and commits
+  - `>allow-git staging` / `>allow-git commit` for granular control
+  - `>allow-git off` restores approval prompts
+  - `>allow-git status` shows current state
+  - Session-scoped via `session_id` from hook JSON input
+  - Dangerous operations (`git add -A`, `git add .`,
+    `git checkout --force`) remain always blocked
+  - Implemented as a `UserPromptSubmit` hook (no race conditions)
+
 ## 2026-02-11
 
 ### aichat, voice, safety-hooks
