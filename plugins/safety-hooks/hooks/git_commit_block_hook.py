@@ -17,10 +17,12 @@ if PLUGIN_ROOT:
 from command_utils import extract_subcommands
 
 
-def check_git_commit_command(command):
-    """
-    Check if a command contains a git commit and request user permission.
-    Handles compound commands (e.g., "cd /path && git commit -m 'msg'").
+def check_git_commit_command(command, session_id: str = ""):
+    """Check if a command contains a git commit and request
+    user permission.
+
+    Handles compound commands
+    (e.g., "cd /path && git commit -m 'msg'").
 
     Returns tuple: (decision: str, reason: str or None)
 
@@ -30,6 +32,11 @@ def check_git_commit_command(command):
     for subcmd in extract_subcommands(command):
         normalized = ' '.join(subcmd.strip().split())
         if normalized.startswith('git commit'):
+            # Check if commits are allowed via session-scoped flag
+            if session_id and os.path.exists(
+                f'/tmp/claude/allow-git-commit.{session_id}'
+            ):
+                return "allow", None
             reason = "Git commit requires your approval."
             return "ask", reason
 

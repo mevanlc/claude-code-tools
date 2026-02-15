@@ -15,7 +15,16 @@ if PLUGIN_ROOT:
 from command_utils import extract_subcommands
 
 
-def check_git_add_command(command):
+def _is_allowed(flag_name: str, session_id: str = "") -> bool:
+    """Check if a session-scoped allow flag is set."""
+    if not session_id:
+        return False
+    return os.path.exists(
+        f'/tmp/claude/allow-git-{flag_name}.{session_id}'
+    )
+
+
+def check_git_add_command(command, session_id: str = ""):
     """
     Check if a git add command contains dangerous patterns.
     Handles compound commands (e.g., "cd /path && git add .").
@@ -27,7 +36,7 @@ def check_git_add_command(command):
     first_ask_result = None
 
     for subcmd in extract_subcommands(command):
-        result = _check_single_git_add_command(subcmd)
+        result = _check_single_git_add_command(subcmd, session_id)
         decision, reason = result
 
         # Hard blocks return immediately
@@ -45,7 +54,7 @@ def check_git_add_command(command):
     return False, None
 
 
-def _check_single_git_add_command(command):
+def _check_single_git_add_command(command, session_id: str = ""):
     """
     Check a single (non-compound) command for dangerous git add patterns.
     Returns tuple: (decision, reason) where decision is bool or "ask"/"block"/"allow"
@@ -152,6 +161,9 @@ This restriction prevents accidentally staging unwanted files."""
                     return False, None
 
                 # Modified files present - ask for permission
+                # Check if staging is allowed via flag file
+                if _is_allowed('staging', session_id):
+                    return False, None
                 file_list = ", ".join(modified_files[:5])
                 if len(modified_files) > 5:
                     file_list += f" (+{len(modified_files) - 5} more)"
@@ -177,6 +189,9 @@ This restriction prevents accidentally staging unwanted files."""
     if normalized_cmd.startswith('git add'):
         modified_files = get_modified_files_being_staged(normalized_cmd)
         if modified_files:
+            # Check if staging is allowed via flag file
+            if _is_allowed('staging', session_id):
+                return False, None
             file_list = ", ".join(modified_files[:5])
             if len(modified_files) > 5:
                 file_list += f" (+{len(modified_files) - 5} more)"

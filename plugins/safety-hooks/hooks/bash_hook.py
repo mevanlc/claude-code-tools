@@ -44,6 +44,8 @@ def normalize_check_result(result):
 def main():
     data = json.load(sys.stdin)
 
+    session_id = data.get("session_id", "")
+
     # Check if this is a Bash tool call
     tool_name = data.get("tool_name")
     if tool_name != "Bash":
@@ -70,7 +72,12 @@ def main():
     ask_reasons = []
 
     for check_func in checks:
-        decision, reason = normalize_check_result(check_func(command))
+        # Pass session_id to git checks that support it
+        if check_func in (check_git_add_command, check_git_commit_command):
+            result = check_func(command, session_id=session_id)
+        else:
+            result = check_func(command)
+        decision, reason = normalize_check_result(result)
         if decision == "block":
             block_reasons.append(reason)
         elif decision == "ask":

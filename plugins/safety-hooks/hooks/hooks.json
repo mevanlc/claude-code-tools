@@ -42,6 +42,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'if test -f \"${CLAUDE_PLUGIN_ROOT}/hooks/allow_git_hook.py\"; then python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/allow_git_hook.py\"; else echo \"{\\\"decision\\\":\\\"approve\\\"}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
