@@ -226,15 +226,26 @@ CONVERTIBLE_TYPES = {
 def find_doc_by_name(
     service, folder_id: Optional[str], doc_name: str
 ) -> Optional[dict]:
-    """Find a convertible document by name in a folder. Returns file metadata or None."""
-    parent = folder_id if folder_id else "root"
+    """Find a convertible document by name.
+
+    Searches in the specified folder (or My Drive root if none).
+    If not found and no explicit folder was given, falls back to
+    searching across all accessible files (including Shared with
+    me and Shared Drives).
+
+    Returns file metadata dict or None.
+    """
+    # Escape single quotes in doc name for Drive API query
+    safe_name = doc_name.replace("'", "\\'")
 
     # Search for any convertible document type
     type_conditions = " or ".join(
         f"mimeType = '{mime}'" for mime in CONVERTIBLE_TYPES.keys()
     )
+
+    parent = folder_id if folder_id else "root"
     query = (
-        f"name = '{doc_name}' and "
+        f"name = '{safe_name}' and "
         f"'{parent}' in parents and "
         f"({type_conditions}) and "
         f"trashed = false"
@@ -251,7 +262,34 @@ def find_doc_by_name(
         .execute()
     )
     files = results.get("files", [])
-    return files[0] if files else None
+    if files:
+        return files[0]
+
+    # If no explicit folder was given and root search found nothing,
+    # broaden to all accessible files (Shared with me, Shared
+    # Drives, etc.)
+    if not folder_id:
+        broad_query = (
+            f"name = '{safe_name}' and "
+            f"({type_conditions}) and "
+            f"trashed = false"
+        )
+        results = (
+            service.files()
+            .list(
+                q=broad_query,
+                fields="files(id, name, mimeType)",
+                pageSize=1,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
+        )
+        files = results.get("files", [])
+        if files:
+            return files[0]
+
+    return None
 
 
 def list_docs_in_folder(service, folder_id: Optional[str]) -> list[dict]:
