@@ -121,6 +121,32 @@ The `git add` hook applies layered protection:
   modified files are included, approval is
   required.
 
+### Temporarily Allowing Staging & Commits
+
+When you're in a workflow where you trust the agent
+to stage modified files and commit, you can
+temporarily disable the approval prompts using a
+`>allow-git` trigger. Type it directly at the prompt:
+
+| Trigger | Effect |
+|---------|--------|
+| `>allow-git` | Allow both staging and commits |
+| `>allow-git staging` | Allow only staging modified files |
+| `>allow-git commit` | Allow only commits |
+| `>allow-git off` | Restore approval prompts |
+| `>allow-git status` | Show current state |
+
+This is **session-scoped** — it only affects the
+current Claude Code session. Other concurrent sessions
+are unaffected, and the allowance is automatically
+gone when the session ends.
+
+:::caution
+Dangerous operations like `git add -A`, `git add .`,
+and `git checkout --force` remain **always blocked**
+regardless of this setting.
+:::
+
 ### Environment File Protection
 
 All operations on `.env` files are blocked:
