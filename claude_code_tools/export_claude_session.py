@@ -98,7 +98,7 @@ def export_session_programmatic(
         print()
 
     # Export to file
-    with open(output_path, 'w') as f:
+    with open(output_path, 'w', encoding="utf-8") as f:
         stats = export_session_to_markdown(session_file, f, verbose=verbose)
 
     if verbose:
@@ -260,7 +260,7 @@ def export_session_to_markdown(
         "skipped": 0
     }
 
-    with open(session_file, 'r') as f:
+    with open(session_file, 'r', encoding="utf-8") as f:
         for line_num, line in enumerate(f, 1):
             line = line.strip()
             if not line:
@@ -463,7 +463,7 @@ def main():
         print()
 
     # Export to markdown
-    with open(args.output, 'w') as f:
+    with open(args.output, 'w', encoding="utf-8") as f:
         stats = export_session_to_markdown(session_file, f, verbose=args.verbose)
 
     # Print statistics

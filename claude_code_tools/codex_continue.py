@@ -195,7 +195,7 @@ def codex_continue(
 
         # Read the new session file and modify first line
         if new_session_file.exists():
-            with open(new_session_file, "r") as f:
+            with open(new_session_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
             if lines:
@@ -210,7 +210,7 @@ def codex_continue(
                     lines[0] = json.dumps(first_line_data) + "\n"
 
                     # Write back the modified file
-                    with open(new_session_file, "w") as f:
+                    with open(new_session_file, "w", encoding="utf-8") as f:
                         f.writelines(lines)
 
                     if verbose:

@@ -40,7 +40,7 @@ CONVERSATION_TYPES = {"user", "assistant", "system", "summary"}
 def load_session(filepath: str | Path) -> list[dict]:
     """Load all entries from a session JSONL file."""
     entries = []
-    with open(filepath) as f:
+    with open(filepath, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -205,7 +205,7 @@ def fix_conversation_chain(
 
 def write_session(entries: list[dict], filepath: str | Path) -> None:
     """Write entries to a JSONL file."""
-    with open(filepath, "w") as f:
+    with open(filepath, "w", encoding="utf-8") as f:
         for e in entries:
             f.write(json.dumps(e, separators=(",", ":")) + "\n")
 

@@ -38,7 +38,7 @@ def find_direct_children(
 
         for jsonl_file in search_dir.rglob("*.jsonl"):
             try:
-                with open(jsonl_file) as f:
+                with open(jsonl_file, encoding="utf-8") as f:
                     first_line = f.readline().strip()
 
                 data = json.loads(first_line)
@@ -219,7 +219,7 @@ Examples:
 
         for trimmed in sorted(all_trimmed):
             try:
-                with open(trimmed) as f:
+                with open(trimmed, encoding="utf-8") as f:
                     first_line = f.readline().strip()
                 data = json.loads(first_line)
 

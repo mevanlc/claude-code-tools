@@ -196,7 +196,7 @@ class TestProcessSession:
         )
 
         # Read output and verify tool results are truncated, not replaced
-        with open(output_path) as f:
+        with open(output_path, encoding="utf-8") as f:
             for line in f:
                 data = json.loads(line)
 
@@ -260,7 +260,7 @@ class TestTrimAndCreateSession:
         assert output_path.exists()
 
         # Check that metadata was added to first line
-        with open(output_path) as f:
+        with open(output_path, encoding="utf-8") as f:
             first_line = json.loads(f.readline())
             assert "trim_metadata" in first_line
             assert first_line["trim_metadata"]["parent_file"] == str(

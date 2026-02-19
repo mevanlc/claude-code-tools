@@ -53,7 +53,7 @@ def sample_exports(tmp_path: Path) -> Path:
         export_file = claude_dir / f"{session['session_id']}.txt"
 
         yaml_str = yaml.dump(session, default_flow_style=False)
-        with open(export_file, "w") as f:
+        with open(export_file, "w", encoding="utf-8") as f:
             f.write(f"---\n{yaml_str}---\n\n")
             f.write(f"> {content}\n")
 
@@ -253,7 +253,7 @@ def sample_jsonl_sessions(tmp_path: Path) -> list[Path]:
             "timestamp": "2025-11-28T10:01:00Z",
         },
     ]
-    with open(session1, "w") as f:
+    with open(session1, "w", encoding="utf-8") as f:
         for line in session1_lines:
             f.write(json.dumps(line) + "\n")
 
@@ -285,7 +285,7 @@ def sample_jsonl_sessions(tmp_path: Path) -> list[Path]:
             "timestamp": "2025-11-29T08:01:00Z",
         },
     ]
-    with open(session2, "w") as f:
+    with open(session2, "w", encoding="utf-8") as f:
         for line in session2_lines:
             f.write(json.dumps(line) + "\n")
 

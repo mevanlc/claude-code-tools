@@ -146,7 +146,7 @@ def analyze_session_with_cli(
     instructions = custom_instructions or default_instructions
 
     # Read and prepare session content
-    with open(session_file, 'r') as f:
+    with open(session_file, 'r', encoding="utf-8") as f:
         session_lines = f.readlines()
 
     # Build simplified representation
@@ -195,7 +195,7 @@ def analyze_session_with_cli(
     exports_dir = Path(".codex/exports" if is_codex_session else ".claude/exports")
     exports_dir.mkdir(parents=True, exist_ok=True)
     session_repr_file = exports_dir / f"{session_id}.txt"
-    with open(session_repr_file, 'w') as f:
+    with open(session_repr_file, 'w', encoding="utf-8") as f:
         f.write(session_content)
 
     # Select prompt template based on CLI type
@@ -243,7 +243,7 @@ def analyze_session_with_cli(
         raw_debug_dir = Path(".codex" if is_codex_session else ".claude")
         raw_debug_dir.mkdir(exist_ok=True)
         raw_debug_file = raw_debug_dir / f"trim-raw-{session_id}.txt"
-        with open(raw_debug_file, 'w') as f:
+        with open(raw_debug_file, 'w', encoding="utf-8") as f:
             f.write(f"=== STDOUT ({len(result.stdout)} chars) ===\n")
             f.write(result.stdout)
             f.write(f"\n\n=== STDERR ({len(result.stderr)} chars) ===\n")
@@ -313,7 +313,7 @@ def analyze_session_with_cli(
             # Save raw response for debugging
             debug_file = Path(".claude/trim-debug-response.txt")
             debug_file.parent.mkdir(exist_ok=True)
-            with open(debug_file, 'w') as f:
+            with open(debug_file, 'w', encoding="utf-8") as f:
                 f.write(f"Full text:\n{text}\n\n")
                 f.write(f"Extracted JSON ({start}:{end}):\n{json_str}\n")
             print(f"   Debug saved to: {debug_file}")
@@ -323,7 +323,7 @@ def analyze_session_with_cli(
         diag_dir = Path(".codex" if is_codex_session else ".claude")
         diag_dir.mkdir(exist_ok=True)
         diag_file = diag_dir / f"trim-result-{session_id}.jsonl"
-        with open(diag_file, 'w') as f:
+        with open(diag_file, 'w', encoding="utf-8") as f:
             # Write prompt summary
             f.write(json.dumps({
                 "type": "prompt_info",
@@ -574,7 +574,7 @@ def identify_trimmable_lines_cli(
         exclude_types = []
 
     # Read session to determine protected indices
-    with open(session_file, 'r') as f:
+    with open(session_file, 'r', encoding="utf-8") as f:
         session_lines = f.readlines()
 
     total_lines = len(session_lines)

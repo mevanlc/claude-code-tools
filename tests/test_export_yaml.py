@@ -45,7 +45,7 @@ def sample_claude_session(tmp_path: Path) -> Path:
         },
     ]
 
-    with open(session_file, "w") as f:
+    with open(session_file, "w", encoding="utf-8") as f:
         for line in lines:
             f.write(json.dumps(line) + "\n")
 
@@ -76,7 +76,7 @@ def sample_trimmed_session(tmp_path: Path) -> Path:
         },
     ]
 
-    with open(session_file, "w") as f:
+    with open(session_file, "w", encoding="utf-8") as f:
         for line in lines:
             f.write(json.dumps(line) + "\n")
 
@@ -103,7 +103,7 @@ def sample_continued_session(tmp_path: Path) -> Path:
         },
     ]
 
-    with open(session_file, "w") as f:
+    with open(session_file, "w", encoding="utf-8") as f:
         for line in lines:
             f.write(json.dumps(line) + "\n")
 
@@ -307,7 +307,7 @@ class TestSessionIdFromFilename:
             },
         ]
 
-        with open(session_file, "w") as f:
+        with open(session_file, "w", encoding="utf-8") as f:
             for line in lines:
                 f.write(json.dumps(line) + "\n")
 
@@ -340,7 +340,7 @@ class TestSessionIdFromFilename:
             },
         ]
 
-        with open(original_file, "w") as f:
+        with open(original_file, "w", encoding="utf-8") as f:
             for line in lines:
                 f.write(json.dumps(line) + "\n")
 

@@ -76,7 +76,7 @@ class DotenvVault:
         ]
         
         try:
-            with open(backup_path, 'w') as f:
+            with open(backup_path, 'w', encoding="utf-8") as f:
                 subprocess.run(cmd, stdout=f, check=True)
             click.echo(f"✅ Encrypted .env → {backup_path}")
             return True
@@ -118,7 +118,7 @@ class DotenvVault:
         ]
         
         try:
-            with open(env_file, 'w') as f:
+            with open(env_file, 'w', encoding="utf-8") as f:
                 subprocess.run(cmd, stdout=f, check=True)
             click.echo(f"✅ Decrypted {backup_path} → {env_file}")
             return True
