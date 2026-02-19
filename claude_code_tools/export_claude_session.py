@@ -25,16 +25,18 @@ def wrap_text_preserve_prefix(
     text: str,
     prefix: str,
     width: int = EXPORT_WRAP_WIDTH,
+    prefix_all_lines: bool = False,
 ) -> list[str]:
     """
     Wrap text to specified width, preserving the prefix on the first line.
 
-    Subsequent lines are indented to align with the first line's content.
+    Subsequent lines can either align with content or repeat the prefix.
 
     Args:
         text: Text to wrap
         prefix: Prefix for first line (e.g., "> " or "⏺ ")
         width: Maximum line width
+        prefix_all_lines: If True, apply prefix to wrapped continuation lines too
 
     Returns:
         List of wrapped lines
@@ -42,8 +44,8 @@ def wrap_text_preserve_prefix(
     if not text.strip():
         return [prefix]
 
-    # Calculate subsequent indent (spaces to align with content after prefix)
-    subsequent_indent = " " * len(prefix)
+    # Either prefix every wrapped line or align continuations with content.
+    subsequent_indent = prefix if prefix_all_lines else (" " * len(prefix))
 
     wrapped = textwrap.fill(
         text,
@@ -239,7 +241,7 @@ def export_session_to_markdown(
     Export Claude Code session using Claude Code's built-in export format.
 
     Format:
-        User messages: "> " prefix on first line, plain text continuation
+        User messages: "> " prefix on every line
         Assistant messages: "⏺ " prefix on first line, plain text continuation
         Tool calls: "⏺ ToolName(args)"
         Tool results: "  ⎿  output" with indented continuation lines
@@ -296,7 +298,7 @@ def export_session_to_markdown(
                     # Wrap and write user message with "> " prefix
                     for para in text.split('\n\n'):
                         if para.strip():
-                            wrapped = wrap_text_preserve_prefix(para, "> ")
+                            wrapped = wrap_text_preserve_prefix(para, "> ", prefix_all_lines=True)
                             for line in wrapped:
                                 output_file.write(f"{line}\n")
                             output_file.write("\n")
@@ -325,7 +327,7 @@ def export_session_to_markdown(
                     if role == "user":
                         for para in text.split('\n\n'):
                             if para.strip():
-                                wrapped = wrap_text_preserve_prefix(para, "> ")
+                                wrapped = wrap_text_preserve_prefix(para, "> ", prefix_all_lines=True)
                                 for line in wrapped:
                                     output_file.write(f"{line}\n")
                                 output_file.write("\n")
@@ -352,7 +354,7 @@ def export_session_to_markdown(
                     if text:
                         for para in text.split('\n\n'):
                             if para.strip():
-                                wrapped = wrap_text_preserve_prefix(para, "> ")
+                                wrapped = wrap_text_preserve_prefix(para, "> ", prefix_all_lines=True)
                                 for line in wrapped:
                                     output_file.write(f"{line}\n")
                                 output_file.write("\n")
