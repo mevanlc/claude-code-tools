@@ -93,7 +93,7 @@ def load_config() -> List[AgentConfig]:
 
     if config_path.exists():
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 agents = []
                 for agent_data in data.get("agents", []):
@@ -442,7 +442,7 @@ def append_to_codex_history(
         "text": first_user_msg[:500],  # Limit to 500 chars
     }
 
-    with open(history_file, "a") as f:
+    with open(history_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(history_entry) + "\n")
 
 
@@ -462,7 +462,7 @@ def extract_first_user_message(
     """
     result = None
 
-    with open(session_file, "r") as f:
+    with open(session_file, "r", encoding="utf-8") as f:
         for line in f:
             try:
                 data = json.loads(line)

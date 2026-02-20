@@ -950,7 +950,7 @@ def info(session, agent, json_output):
     mod_time = datetime.fromtimestamp(session_file.stat().st_mtime)
     create_time = datetime.fromtimestamp(session_file.stat().st_ctime)
     file_size = session_file.stat().st_size
-    line_count = sum(1 for _ in open(session_file))
+    line_count = sum(1 for _ in open(session_file, encoding="utf-8"))
 
     # Extract metadata from session
     from claude_code_tools.export_session import extract_session_metadata
@@ -1117,7 +1117,7 @@ def move_session(session, new_project, agent):
     print(f"Reading session: {session_file}")
     lines = []
     old_cwd = None
-    with open(session_file, "r") as f:
+    with open(session_file, "r", encoding="utf-8") as f:
         for line in f:
             try:
                 data = json.loads(line)
@@ -1161,7 +1161,7 @@ def move_session(session, new_project, agent):
 
         # Write updated content to new location
         print(f"Moving session to: {new_file_path}")
-        with open(new_file_path, "w") as f:
+        with open(new_file_path, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
         # Remove old file if different location
@@ -1178,7 +1178,7 @@ def move_session(session, new_project, agent):
     else:
         # Codex: just update file in place (sessions organized by date, not project)
         print(f"Updating session in place: {session_file}")
-        with open(session_file, "w") as f:
+        with open(session_file, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
         print(f"\n[green]Session updated successfully![/green]")
@@ -1809,7 +1809,7 @@ def _scan_session_files(
         for jsonl_path in claude_projects.glob("**/*.jsonl"):
             is_subagent = jsonl_path.name.startswith("agent-")
             try:
-                with open(jsonl_path) as f:
+                with open(jsonl_path, encoding="utf-8") as f:
                     first_line = f.readline().strip()
                 if first_line:
                     data = json.loads(first_line)
@@ -1854,7 +1854,7 @@ def _scan_session_files(
         for jsonl_path in codex_home.glob("**/*.jsonl"):
             is_subagent = jsonl_path.name.startswith("agent-")
             try:
-                with open(jsonl_path) as f:
+                with open(jsonl_path, encoding="utf-8") as f:
                     first_line = f.readline().strip()
                 if first_line:
                     data = json.loads(first_line)
@@ -2455,7 +2455,7 @@ def search(
         file_path = selected.get("file_path", "")
         if file_path and file_path.endswith(".txt"):
             try:
-                with open(file_path, "r") as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     file_content = f.read(2000)
                     if file_content.startswith("---\n"):
                         end_idx = file_content.find("\n---\n", 4)

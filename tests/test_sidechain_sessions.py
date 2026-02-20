@@ -49,7 +49,7 @@ def sidechain_session_file(temp_output_dir):
         }
     ]
 
-    with open(sidechain_file, 'w') as f:
+    with open(sidechain_file, 'w', encoding="utf-8") as f:
         for entry in sidechain_content:
             f.write(json.dumps(entry) + '\n')
 
@@ -82,7 +82,7 @@ def normal_session_file(temp_output_dir):
         }
     ]
 
-    with open(normal_file, 'w') as f:
+    with open(normal_file, 'w', encoding="utf-8") as f:
         for entry in normal_content:
             f.write(json.dumps(entry) + '\n')
 

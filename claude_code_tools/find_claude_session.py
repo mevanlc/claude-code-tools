@@ -704,7 +704,7 @@ def display_interactive_ui(sessions: List[Tuple[str, float, float, int, str, str
             if stderr_mode:
                 # Temporarily redirect stdout to devnull
                 old_stdout = sys.stdout
-                sys.stdout = open(os.devnull, 'w')
+                sys.stdout = open(os.devnull, 'w', encoding="utf-8")
 
             choice = Prompt.ask(
                 "Your choice",
@@ -769,7 +769,7 @@ def prompt_suppress_options() -> Optional[Tuple[Optional[str], int, Optional[int
 
 def extract_first_user_message_claude(session_file: Path) -> str:
     """Extract first user message from Claude session file."""
-    with open(session_file, "r") as f:
+    with open(session_file, "r", encoding="utf-8") as f:
         for line in f:
             try:
                 data = json.loads(line)
@@ -1097,7 +1097,7 @@ def handle_export_session(session_file_path: str, dest_override: str | None = No
 
         # Export to text file
         print(f"\n📄 Exporting session...")
-        with open(dest_path, 'w') as f:
+        with open(dest_path, 'w', encoding="utf-8") as f:
             stats = do_export(Path(session_file_path), f, verbose=False)
 
         if not silent:

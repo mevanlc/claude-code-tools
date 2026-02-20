@@ -315,7 +315,7 @@ class TestTrimMetadataPreservation:
         trim2 = Path(result2["output_file"])
 
         # Check that trim2's metadata points to trim1, not original
-        with open(trim2) as f:
+        with open(trim2, encoding="utf-8") as f:
             first_line = json.loads(f.readline())
             assert "trim_metadata" in first_line
             assert first_line["trim_metadata"]["parent_file"] == str(

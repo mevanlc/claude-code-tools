@@ -21,7 +21,7 @@ def get_session_info(session_file: Path) -> dict:
     Returns:
         Dict with session metadata (lines, date_range, last_user_msg, etc.)
     """
-    with open(session_file, 'r') as f:
+    with open(session_file, 'r', encoding="utf-8") as f:
         lines = f.readlines()
 
     total_lines = len(lines)

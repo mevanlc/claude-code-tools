@@ -103,7 +103,7 @@ class IndexState:
         """Load state from disk."""
         if self.state_path.exists():
             try:
-                with open(self.state_path, "r") as f:
+                with open(self.state_path, "r", encoding="utf-8") as f:
                     self.indexed_files = json.load(f)
             except (json.JSONDecodeError, IOError):
                 self.indexed_files = {}
@@ -111,7 +111,7 @@ class IndexState:
     def save(self):
         """Save state to disk."""
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self.state_path, "w") as f:
+        with open(self.state_path, "w", encoding="utf-8") as f:
             json.dump(self.indexed_files, f)
 
     def needs_reindex(self, file_path: Path) -> bool:

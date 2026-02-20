@@ -53,7 +53,7 @@ def get_parent_info(session_file: Path) -> Tuple[
         return None, None, None
 
     try:
-        with open(session_file) as f:
+        with open(session_file, encoding="utf-8") as f:
             first_line = f.readline().strip()
 
         if not first_line:

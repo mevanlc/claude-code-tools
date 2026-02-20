@@ -404,7 +404,7 @@ def main():
     # DEBUG: Log the full stop hook input to see what data is available
     debug_file = Path("/tmp/voice-stop-hook-input.json")
     try:
-        with open(debug_file, "w") as f:
+        with open(debug_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=str)
     except Exception:
         pass

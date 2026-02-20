@@ -17,7 +17,7 @@ def build_tool_name_mapping(input_file: Path) -> Dict[str, str]:
     """
     tool_map = {}
 
-    with open(input_file, "r") as f:
+    with open(input_file, "r", encoding="utf-8") as f:
         for line in f:
             try:
                 data = json.loads(line)
@@ -206,7 +206,7 @@ def process_codex_session(
     if trim_assistant_messages is not None:
         assistant_messages = []  # List of (line_num, length, data)
 
-        with open(input_file, "r") as f:
+        with open(input_file, "r", encoding="utf-8") as f:
             for line_num, line in enumerate(f, start=1):
                 try:
                     data = json.loads(line)
@@ -249,9 +249,9 @@ def process_codex_session(
             }
 
     # Second pass: process and trim
-    with open(input_file, "r") as infile, open(
+    with open(input_file, "r", encoding="utf-8") as infile, open(
         output_file, "w"
-    ) as outfile:
+    , encoding="utf-8") as outfile:
         for line_num, line in enumerate(infile, start=1):
             try:
                 data = json.loads(line)

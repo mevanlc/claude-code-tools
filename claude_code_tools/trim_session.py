@@ -103,7 +103,7 @@ def inject_lineage_into_first_user_message(
     )
 
     # Read the output file
-    with open(output_file, "r") as f:
+    with open(output_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     # Find and modify the first user message
@@ -164,7 +164,7 @@ def inject_lineage_into_first_user_message(
 
     # Write back if modified
     if modified:
-        with open(output_file, "w") as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             f.writelines(lines)
 
 
@@ -185,7 +185,7 @@ def update_session_id_in_file(
         agent: Agent type ('claude' or 'codex')
     """
     # Read all lines
-    with open(file_path, "r") as f:
+    with open(file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     modified_lines = []
@@ -214,7 +214,7 @@ def update_session_id_in_file(
         modified_lines.append(json.dumps(data) + "\n")
 
     # Write back
-    with open(file_path, "w") as f:
+    with open(file_path, "w", encoding="utf-8") as f:
         f.writelines(modified_lines)
 
 
@@ -234,7 +234,7 @@ def is_trimmed_session(session_file: Path) -> bool:
         return False
 
     try:
-        with open(session_file, "r") as f:
+        with open(session_file, "r", encoding="utf-8") as f:
             first_line = f.readline().strip()
             if not first_line:
                 return False
@@ -261,7 +261,7 @@ def get_session_derivation_type(session_file: Path) -> Optional[str]:
         return None
 
     try:
-        with open(session_file, "r") as f:
+        with open(session_file, "r", encoding="utf-8") as f:
             first_line = f.readline().strip()
             if not first_line:
                 return None
@@ -289,7 +289,7 @@ def extract_session_info(input_file: Path, agent: str) -> dict:
     """
     import json
 
-    with open(input_file, "r") as f:
+    with open(input_file, "r", encoding="utf-8") as f:
         for line in f:
             try:
                 data = json.loads(line)
@@ -323,7 +323,7 @@ def detect_agent(input_file: Path) -> str:
     import json
 
     # Read first 20 lines to detect structure
-    with open(input_file, "r") as f:
+    with open(input_file, "r", encoding="utf-8") as f:
         for i, line in enumerate(f):
             if i >= 20:
                 break
@@ -471,7 +471,7 @@ def trim_and_create_session(
     }
 
     # Read the file and modify first line
-    with open(output_path, "r") as f:
+    with open(output_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     if lines:
@@ -485,7 +485,7 @@ def trim_and_create_session(
             lines[0] = json.dumps(first_line_data) + "\n"
 
             # Write back the modified file
-            with open(output_path, "w") as f:
+            with open(output_path, "w", encoding="utf-8") as f:
                 f.writelines(lines)
         except json.JSONDecodeError:
             # If first line is not valid JSON, leave file as-is
