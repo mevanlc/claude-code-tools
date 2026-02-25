@@ -64,7 +64,7 @@ class TestSmartTrim:
         from claude_code_tools.smart_trim_core import identify_trimmable_lines_cli
 
         print(f"\n📄 Analyzing Claude session file: {real_claude_session_file}")
-        print(f"   File has {sum(1 for _ in open(real_claude_session_file))} lines")
+        print(f"   File has {sum(1 for _ in open(real_claude_session_file, encoding="utf-8"))} lines")
         print(f"   Using CLI with parallel sub-agents...\n")
 
         # Run the analysis
@@ -91,7 +91,7 @@ class TestSmartTrim:
             print(f"   Trimmable indices (first 20): {indices[:20]}")
 
             # All indices should be valid
-            total_lines = sum(1 for _ in open(real_claude_session_file))
+            total_lines = sum(1 for _ in open(real_claude_session_file, encoding="utf-8"))
             assert all(0 <= idx < total_lines for idx in indices)
 
             # Verify no duplicates
@@ -102,7 +102,7 @@ class TestSmartTrim:
         from claude_code_tools.smart_trim_core import identify_trimmable_lines_cli
 
         print(f"\n📄 Analyzing Codex session file: {real_codex_session_file}")
-        print(f"   File has {sum(1 for _ in open(real_codex_session_file))} lines")
+        print(f"   File has {sum(1 for _ in open(real_codex_session_file, encoding="utf-8"))} lines")
         print(f"   Using CLI...\n")
 
         # Run the analysis (use claude CLI even for codex sessions - it works on both)
@@ -129,7 +129,7 @@ class TestSmartTrim:
             print(f"   Trimmable indices (first 20): {indices[:20]}")
 
             # All indices should be valid
-            total_lines = sum(1 for _ in open(real_codex_session_file))
+            total_lines = sum(1 for _ in open(real_codex_session_file, encoding="utf-8"))
             assert all(0 <= idx < total_lines for idx in indices)
 
             # Verify no duplicates
@@ -173,8 +173,8 @@ class TestSmartTrim:
             # Step 3: Verify trimmed file
             print(f"\n✅ Step 3: Verifying trimmed session...")
 
-            original_lines = sum(1 for _ in open(real_claude_session_file))
-            trimmed_lines = sum(1 for _ in open(output_file))
+            original_lines = sum(1 for _ in open(real_claude_session_file, encoding="utf-8"))
+            trimmed_lines = sum(1 for _ in open(output_file, encoding="utf-8"))
 
             assert trimmed_lines == original_lines, (
                 "Trimmed file should have same number of lines"

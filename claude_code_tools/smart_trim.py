@@ -76,7 +76,7 @@ def trim_lines(
 
         return result
 
-    with open(input_file, 'r') as f:
+    with open(input_file, 'r', encoding="utf-8") as f:
         lines = f.readlines()
 
     chars_saved = 0
@@ -196,7 +196,7 @@ def trim_lines(
                 pass
 
     # Write output
-    with open(output_file, 'w') as f:
+    with open(output_file, 'w', encoding="utf-8") as f:
         f.writelines(lines)
 
     return {
@@ -395,7 +395,7 @@ def main():
     }
 
     # Read the file and modify first line
-    with open(output_file, "r") as f:
+    with open(output_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
     if lines:
@@ -406,7 +406,7 @@ def main():
             lines[0] = json.dumps(first_line_data) + "\n"
 
             # Write back the modified file
-            with open(output_file, "w") as f:
+            with open(output_file, "w", encoding="utf-8") as f:
                 f.writelines(lines)
         except json.JSONDecodeError:
             # If first line is malformed, just skip adding metadata

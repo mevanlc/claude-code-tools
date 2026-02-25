@@ -35,7 +35,7 @@ def _load_user_config() -> dict[str, Any]:
     config_path = Path.home() / ".cctools" / "config.json"
     if config_path.exists():
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except (json.JSONDecodeError, IOError):
             return {}

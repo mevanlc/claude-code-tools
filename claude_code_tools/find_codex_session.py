@@ -517,13 +517,13 @@ def append_to_codex_history(
         "text": first_user_msg[:500],  # Limit to 500 chars
     }
 
-    with open(history_file, "a") as f:
+    with open(history_file, "a", encoding="utf-8") as f:
         f.write(json.dumps(history_entry) + "\n")
 
 
 def extract_first_user_message_codex(session_file: Path) -> str:
     """Extract first user message from Codex session file."""
-    with open(session_file, "r") as f:
+    with open(session_file, "r", encoding="utf-8") as f:
         for line in f:
             try:
                 data = json.loads(line)
@@ -800,7 +800,7 @@ def handle_export_session(session_file_path: str, dest_override: str | None = No
 
     # Export to text file
     try:
-        with open(dest_path, 'w') as f:
+        with open(dest_path, 'w', encoding="utf-8") as f:
             stats = do_export(Path(session_file_path), f, verbose=False)
 
         print(f"\n✅ Export complete!")

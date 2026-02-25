@@ -161,7 +161,7 @@ def main() -> None:
                 if dest_path.suffix != ".txt":
                     dest_path = dest_path.with_suffix(".txt")
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(dest_path, "w") as fh:
+                with open(dest_path, "w", encoding="utf-8") as fh:
                     _quiet_call(export_session_to_markdown, Path(file_path), fh, verbose=False)
                 _ok(f"Exported to {dest}", str(dest_path))
             else:
@@ -238,7 +238,7 @@ def main() -> None:
                     export_session_to_markdown,
                 )
 
-                with open(export_path, "w") as fh:
+                with open(export_path, "w", encoding="utf-8") as fh:
                     _quiet_call(
                         export_session_to_markdown, session_path, fh, verbose=False
                     )

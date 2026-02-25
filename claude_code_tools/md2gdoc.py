@@ -150,7 +150,7 @@ def get_credentials():
                 return creds
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
-                with open(token_file, "w") as f:
+                with open(token_file, "w", encoding="utf-8") as f:
                     f.write(creds.to_json())
                 console.print(
                     f"[dim]Using token: {token_file}[/dim]"
@@ -209,7 +209,7 @@ def get_credentials():
     )
     creds = flow.run_local_server(port=0)
 
-    with open(LOCAL_TOKEN_FILE, "w") as token:
+    with open(LOCAL_TOKEN_FILE, "w", encoding="utf-8") as token:
         token.write(creds.to_json())
     console.print(
         f"[green]Token saved to {LOCAL_TOKEN_FILE}[/green]"

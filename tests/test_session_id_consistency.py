@@ -52,7 +52,7 @@ def sample_claude_session(tmp_path: Path) -> Path:
         },
     ]
 
-    with open(session_file, "w") as f:
+    with open(session_file, "w", encoding="utf-8") as f:
         for line in lines:
             f.write(json.dumps(line) + "\n")
 
@@ -90,7 +90,7 @@ def sample_codex_session(tmp_path: Path) -> Path:
         },
     ]
 
-    with open(session_file, "w") as f:
+    with open(session_file, "w", encoding="utf-8") as f:
         for line in lines:
             f.write(json.dumps(line) + "\n")
 
@@ -100,7 +100,7 @@ def sample_codex_session(tmp_path: Path) -> Path:
 def get_all_session_ids_claude(file_path: Path) -> list:
     """Extract all sessionId values from a Claude session file."""
     session_ids = []
-    with open(file_path) as f:
+    with open(file_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:
@@ -112,7 +112,7 @@ def get_all_session_ids_claude(file_path: Path) -> list:
 
 def get_codex_session_id(file_path: Path) -> str | None:
     """Extract session ID from Codex session_meta event."""
-    with open(file_path) as f:
+    with open(file_path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if line:

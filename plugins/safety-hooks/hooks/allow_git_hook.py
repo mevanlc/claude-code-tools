@@ -40,7 +40,7 @@ def _set_flags(
     """Create session-scoped flag files. Returns status message."""
     os.makedirs(FLAG_DIR, exist_ok=True)
     for name in names:
-        with open(_flag_path(name, session_id), "w") as f:
+        with open(_flag_path(name, session_id), "w", encoding="utf-8") as f:
             f.write(session_id)
 
     label = " and ".join(names)
