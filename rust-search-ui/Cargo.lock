@@ -25,6 +25,7 @@ dependencies = [
  "anyhow",
  "arboard",
  "chrono",
+ "crossbeam-channel",
  "crossterm",
  "dirs",
  "ratatui",

@@ -10,6 +10,7 @@ mod clipboard;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, TimeZone, Utc};
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     execute,
@@ -24,10 +25,12 @@ use ratatui::{
     Frame, Terminal,
 };
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, stdout};
+use std::sync::Arc;
+use std::thread;
 use std::time::{Duration, Instant};
 use std::process::Command;
-use std::collections::HashMap;
 use tantivy::{
     collector::TopDocs,
     query::{AllQuery, BooleanQuery, BoostQuery, Occur, PhraseQuery, QueryParser, TermQuery},
@@ -328,12 +331,273 @@ enum ProcessState {
     Waiting,  // S state - waiting for user input
 }
 
+#[derive(Clone)]
+struct FilterRequest {
+    seq: u64,
+    params: FilterParams,
+}
+
+struct FilterResponse {
+    seq: u64,
+    result: FilterResult,
+}
+
+#[derive(Clone)]
+struct FilterParams {
+    query: String,
+    scope_global: bool,
+    filter_dir: Option<String>,
+    include_original: bool,
+    include_sub: bool,
+    include_trimmed: bool,
+    include_continued: bool,
+    filter_agent: Option<String>,
+    filter_min_lines: Option<i64>,
+    filter_after_date: Option<String>,
+    filter_before_date: Option<String>,
+    filter_branch: Option<String>,
+    include_live_only: bool,
+    live_session_ids: Vec<String>,
+    max_results: Option<usize>,
+    sort_by_time: bool,
+}
+
+struct FilterResult {
+    filtered: Vec<usize>,
+    search_snippets: HashMap<String, String>,
+    cached_max_session_id_len: usize,
+    cached_max_project_len: usize,
+    cached_max_branch_len: usize,
+    cached_max_lines_len: usize,
+}
+
+fn compute_filter_result(
+    sessions: &Arc<Vec<Session>>,
+    index_path: &str,
+    launch_cwd: &str,
+    filter_claude_home: Option<&str>,
+    filter_codex_home: Option<&str>,
+    params: &FilterParams,
+) -> FilterResult {
+    let mut filtered: Vec<usize> = sessions
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            // Home filter - apply based on session agent type
+            if s.agent == "codex" {
+                // Codex session: filter by codex_home
+                if let Some(codex_home) = filter_codex_home {
+                    if !s.claude_home.is_empty() && s.claude_home != codex_home {
+                        return false;
+                    }
+                }
+            } else {
+                // Claude session: filter by claude_home
+                if let Some(home) = filter_claude_home {
+                    if !s.claude_home.is_empty() && s.claude_home != home {
+                        return false;
+                    }
+                }
+            }
+
+            // Scope filter: filter_dir overrides scope_global
+            if let Some(ref filter_dir) = params.filter_dir {
+                // Custom directory filter - match exact dir or subdirectories
+                // Must be exact match OR start with filter_dir + "/"
+                if !s.cwd.is_empty() {
+                    let is_match = s.cwd == *filter_dir || s.cwd.starts_with(&format!("{}/", filter_dir));
+                    if !is_match {
+                        return false;
+                    }
+                }
+            } else if !params.scope_global && !s.cwd.is_empty() && s.cwd != launch_cwd {
+                return false;
+            }
+
+            // Inclusion-based filtering: check if session type is included
+            // Sub-agent sessions are handled separately from derivation type
+            if s.is_sidechain {
+                if !params.include_sub {
+                    return false;
+                }
+            } else {
+                let derivation_included = match s.derivation_type.as_str() {
+                    "" => params.include_original,
+                    "trimmed" => params.include_trimmed,
+                    "continued" => params.include_continued,
+                    _ => true,
+                };
+                if !derivation_included {
+                    return false;
+                }
+            }
+
+            // Agent filter
+            if let Some(ref agent) = params.filter_agent {
+                if s.agent != *agent {
+                    return false;
+                }
+            }
+
+            // Branch filter (only effective when not in global scope)
+            if !params.scope_global {
+                if let Some(ref branch) = params.filter_branch {
+                    if s.branch != *branch {
+                        return false;
+                    }
+                }
+            }
+
+            // Min lines filter
+            if let Some(min) = params.filter_min_lines {
+                if s.lines < min {
+                    return false;
+                }
+            }
+
+            // Date filters: compare YYYYMMDD extracted from modified
+            if let Some(ref after_date) = params.filter_after_date {
+                if let Some(session_date) = extract_date_for_comparison(&s.modified) {
+                    if session_date < *after_date {
+                        return false;
+                    }
+                }
+            }
+            if let Some(ref before_date) = params.filter_before_date {
+                if let Some(session_date) = extract_date_for_comparison(&s.modified) {
+                    if session_date > *before_date {
+                        return false;
+                    }
+                }
+            }
+
+            // No query filter at this stage - handled by tantivy_matches below
+            true
+        })
+        .map(|(i, _)| i)
+        .collect();
+
+    let mut search_snippets: HashMap<String, String> = HashMap::new();
+
+    // If there's a keyword query, use Tantivy full-text search
+    if !params.query.trim().is_empty() {
+        let (snippets, ranked_ids) = search_tantivy(
+            index_path,
+            &params.query,
+            filter_claude_home,
+            filter_codex_home,
+        );
+        if !snippets.is_empty() {
+            search_snippets = snippets;
+            // Filter to only sessions that match the Tantivy search
+            filtered.retain(|&i| search_snippets.contains_key(&sessions[i].session_id));
+
+            if params.sort_by_time {
+                // Sort by modified_ts (numeric epoch ms, reverse chronological)
+                filtered.sort_by(|&a, &b| sessions[b].modified_ts.cmp(&sessions[a].modified_ts));
+            } else {
+                // Reorder filtered by Tantivy ranking
+                let rank_pos: HashMap<&str, usize> = ranked_ids
+                    .iter()
+                    .enumerate()
+                    .map(|(pos, id)| (id.as_str(), pos))
+                    .collect();
+
+                filtered.sort_by_key(|&i| {
+                    rank_pos
+                        .get(sessions[i].session_id.as_str())
+                        .copied()
+                        .unwrap_or(usize::MAX)
+                });
+            }
+        } else {
+            // No Tantivy matches - clear results and snippets
+            search_snippets.clear();
+            filtered.clear();
+        }
+    } else {
+        // Clear snippets when no query - sort by time (most recent first)
+        filtered.sort_by(|&a, &b| sessions[b].modified_ts.cmp(&sessions[a].modified_ts));
+    }
+
+    // Apply max_results limit if specified
+    if let Some(limit) = params.max_results {
+        filtered.truncate(limit);
+    }
+
+    // Filter to live sessions only if enabled
+    if params.include_live_only {
+        let live: HashSet<&str> = params.live_session_ids.iter().map(|s| s.as_str()).collect();
+        filtered.retain(|&idx| live.contains(sessions[idx].clean_session_id()));
+    }
+
+    // Cache column widths for rendering (avoid recalculating on every frame)
+    let mut cached_max_session_id_len = 8;
+    let mut cached_max_project_len = 10;
+    let mut cached_max_branch_len = 8;
+    let mut cached_max_lines_len = 4;
+    for &idx in &filtered {
+        let s = &sessions[idx];
+        cached_max_session_id_len = cached_max_session_id_len.max(s.session_id_display().len());
+        cached_max_project_len = cached_max_project_len.max(s.project_name().len());
+        cached_max_branch_len = cached_max_branch_len.max(s.branch_display().len());
+        cached_max_lines_len = cached_max_lines_len.max(format!("{}L", s.lines).len());
+    }
+    // Apply reasonable limits
+    cached_max_session_id_len = cached_max_session_id_len.min(18);
+    cached_max_project_len = cached_max_project_len.min(40);
+    cached_max_branch_len = cached_max_branch_len.min(35);
+
+    FilterResult {
+        filtered,
+        search_snippets,
+        cached_max_session_id_len,
+        cached_max_project_len,
+        cached_max_branch_len,
+        cached_max_lines_len,
+    }
+}
+
+fn filter_worker_loop(
+    sessions: Arc<Vec<Session>>,
+    index_path: String,
+    launch_cwd: String,
+    filter_claude_home: Option<String>,
+    filter_codex_home: Option<String>,
+    req_rx: Receiver<FilterRequest>,
+    res_tx: Sender<FilterResponse>,
+) {
+    loop {
+        let mut req = match req_rx.recv() {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        // Coalesce queued requests: always run only the most recent job.
+        while let Ok(next) = req_rx.try_recv() {
+            req = next;
+        }
+
+        let result = compute_filter_result(
+            &sessions,
+            &index_path,
+            &launch_cwd,
+            filter_claude_home.as_deref(),
+            filter_codex_home.as_deref(),
+            &req.params,
+        );
+
+        // Ignore send failures (main thread exited).
+        let _ = res_tx.send(FilterResponse { seq: req.seq, result });
+    }
+}
+
 // ============================================================================
 // App State
 // ============================================================================
 
 struct App {
-    sessions: Vec<Session>,
+    sessions: Arc<Vec<Session>>,
     filtered: Vec<usize>, // Indices into sessions
     query: Input,  // tui-input widget with readline support
     selected: usize,
@@ -429,6 +693,12 @@ struct App {
     // Search debouncing - wait for typing to pause before searching
     last_query_change: Option<Instant>,           // Timestamp of last keystroke in search
     pending_filter: bool,                         // Whether filter() needs to run
+
+    // Background filtering (optional, enabled in interactive mode)
+    filter_request_tx: Option<Sender<FilterRequest>>,
+    filter_result_rx: Option<Receiver<FilterResponse>>,
+    filter_seq: u64,
+    latest_filter_request: u64,
 
     // Cached column widths for rendering (updated when filter() runs, not every frame)
     cached_max_session_id_len: usize,
@@ -649,17 +919,18 @@ fn get_current_git_branch() -> String {
 }
 
 impl App {
-    // unused - only new_with_options is used, but keeping for upstream compatibility
-    #[allow(dead_code)]
-    fn new(sessions: Vec<Session>, index_path: String, filter_claude_home: Option<String>, filter_codex_home: Option<String>) -> Self {
-        let total = sessions.len();
-        let launch_cwd = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let launch_branch = get_current_git_branch();
+	    // unused - only new_with_options is used, but keeping for upstream compatibility
+	    #[allow(dead_code)]
+	    fn new(sessions: Vec<Session>, index_path: String, filter_claude_home: Option<String>, filter_codex_home: Option<String>) -> Self {
+	        let total = sessions.len();
+	        let sessions = Arc::new(sessions);
+	        let launch_cwd = std::env::current_dir()
+	            .map(|p| p.to_string_lossy().to_string())
+	            .unwrap_or_default();
+	        let launch_branch = get_current_git_branch();
 
-        let mut app = Self {
-            sessions,
+	        let mut app = Self {
+	            sessions,
             filtered: Vec::new(),
             query: Input::default(),
             selected: 0,
@@ -733,31 +1004,37 @@ impl App {
             live_sessions: scan_running_sessions(),
             include_live_only: false,
             last_process_scan: Instant::now(),
-            // Search debouncing
-            last_query_change: None,
-            pending_filter: false,
-            // Cached column widths (will be set by filter())
-            cached_max_session_id_len: 8,
-            cached_max_project_len: 10,
-            cached_max_branch_len: 8,
-            cached_max_lines_len: 4,
+	            // Search debouncing
+	            last_query_change: None,
+	            pending_filter: false,
+	            // Background filtering (optional)
+	            filter_request_tx: None,
+	            filter_result_rx: None,
+	            filter_seq: 0,
+	            latest_filter_request: 0,
+	            // Cached column widths (will be set by filter())
+	            cached_max_session_id_len: 8,
+	            cached_max_project_len: 10,
+	            cached_max_branch_len: 8,
+	            cached_max_lines_len: 4,
             // Preview panel conversation cache
             preview_content: String::new(),
             preview_session_id: None,
             preview_area: None,
             list_area: None,
-            full_view_area: None,
-        };
-        app.filter();
-        app
-    }
+	            full_view_area: None,
+	        };
+	        app.filter_sync();
+	        app
+	    }
 
-    fn new_with_options(sessions: Vec<Session>, index_path: String, cli: &CliOptions) -> Self {
-        let total = sessions.len();
-        let launch_cwd = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let launch_branch = get_current_git_branch();
+	    fn new_with_options(sessions: Vec<Session>, index_path: String, cli: &CliOptions) -> Self {
+	        let total = sessions.len();
+	        let sessions = Arc::new(sessions);
+	        let launch_cwd = std::env::current_dir()
+	            .map(|p| p.to_string_lossy().to_string())
+	            .unwrap_or_default();
+	        let launch_branch = get_current_git_branch();
 
         // Parse date filters if provided
         let (after_date, after_display) = cli.after_date.as_ref()
@@ -770,8 +1047,8 @@ impl App {
             .map(|(cmp, disp)| (Some(cmp), Some(disp)))
             .unwrap_or((None, None));
 
-        let mut app = Self {
-            sessions,
+	        let mut app = Self {
+	            sessions,
             filtered: Vec::new(),
             query: Input::from(cli.query.clone().unwrap_or_default()),
             selected: 0,
@@ -849,25 +1126,30 @@ impl App {
             live_sessions: scan_running_sessions(),
             include_live_only: cli.include_live,
             last_process_scan: Instant::now(),
-            // Search debouncing
-            last_query_change: None,
-            pending_filter: false,
-            // Cached column widths (will be set by filter())
-            cached_max_session_id_len: 8,
-            cached_max_project_len: 10,
-            cached_max_branch_len: 8,
-            cached_max_lines_len: 4,
+	            // Search debouncing
+	            last_query_change: None,
+	            pending_filter: false,
+	            // Background filtering (optional)
+	            filter_request_tx: None,
+	            filter_result_rx: None,
+	            filter_seq: 0,
+	            latest_filter_request: 0,
+	            // Cached column widths (will be set by filter())
+	            cached_max_session_id_len: 8,
+	            cached_max_project_len: 10,
+	            cached_max_branch_len: 8,
+	            cached_max_lines_len: 4,
             // Preview panel conversation cache
             preview_content: String::new(),
             preview_session_id: None,
             preview_area: None,
             list_area: None,
-            full_view_area: None,
-        };
-        app.filter();
+	            full_view_area: None,
+	        };
+	        app.filter_sync();
 
-        // Restore scroll/selection state from CLI if provided
-        // Must be done after filter() populates the filtered list
+	        // Restore scroll/selection state from CLI if provided
+	        // Must be done after filter() populates the filtered list
         if let Some(sel) = cli.selected {
             // Clamp to valid range
             if !app.filtered.is_empty() {
@@ -889,195 +1171,136 @@ impl App {
         self.live_sessions.get(session.clean_session_id()).copied()
     }
 
-    fn filter(&mut self) {
-        self.filtered = self
-            .sessions
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| {
-                // Home filter - apply based on session agent type
-                if s.agent == "codex" {
-                    // Codex session: filter by codex_home
-                    if let Some(ref codex_home) = self.filter_codex_home {
-                        if !s.claude_home.is_empty() && s.claude_home != *codex_home {
-                            return false;
-                        }
-                    }
-                } else {
-                    // Claude session: filter by claude_home
-                    if let Some(ref home) = self.filter_claude_home {
-                        if !s.claude_home.is_empty() && s.claude_home != *home {
-                            return false;
-                        }
-                    }
-                }
-
-                // Scope filter: filter_dir overrides scope_global
-                if let Some(ref filter_dir) = self.filter_dir {
-                    // Custom directory filter - match exact dir or subdirectories
-                    // Must be exact match OR start with filter_dir + "/"
-                    if !s.cwd.is_empty() {
-                        let is_match = s.cwd == *filter_dir
-                            || s.cwd.starts_with(&format!("{}/", filter_dir));
-                        if !is_match {
-                            return false;
-                        }
-                    }
-                } else if !self.scope_global && !s.cwd.is_empty() && s.cwd != self.launch_cwd {
-                    return false;
-                }
-
-                // Inclusion-based filtering: check if session type is included
-
-                // Sub-agent sessions are handled separately from derivation type
-                if s.is_sidechain {
-                    // Sub-agent: include only if include_sub is true
-                    // (derivation type filter does NOT apply to sub-agents)
-                    if !self.include_sub {
-                        return false;
-                    }
-                } else {
-                    // Non-sub-agent: apply derivation type filter
-                    let derivation_included = match s.derivation_type.as_str() {
-                        "" => self.include_original,           // Original session
-                        "trimmed" => self.include_trimmed,     // Trimmed session
-                        "continued" => self.include_continued, // Continued session
-                        _ => true, // Unknown type, include by default
-                    };
-                    if !derivation_included {
-                        return false;
-                    }
-                }
-
-                // Agent filter
-                if let Some(ref agent) = self.filter_agent {
-                    if s.agent != *agent {
-                        return false;
-                    }
-                }
-
-                // Branch filter (only effective when not in global scope)
-                if !self.scope_global {
-                    if let Some(ref branch) = self.filter_branch {
-                        if s.branch != *branch {
-                            return false;
-                        }
-                    }
-                }
-
-                // Min lines filter
-                if let Some(min) = self.filter_min_lines {
-                    if s.lines < min {
-                        return false;
-                    }
-                }
-
-                // Date filters (applied to modified date)
-                if let Some(ref after_date) = self.filter_after_date {
-                    if let Some(session_date) = extract_date_for_comparison(&s.modified) {
-                        if session_date < *after_date {
-                            return false;
-                        }
-                    }
-                }
-                if let Some(ref before_date) = self.filter_before_date {
-                    if let Some(session_date) = extract_date_for_comparison(&s.modified) {
-                        if session_date > *before_date {
-                            return false;
-                        }
-                    }
-                }
-
-                // No query filter at this stage - handled by tantivy_matches below
-                true
-            })
-            .map(|(i, _)| i)
-            .collect();
-
-        // If there's a keyword query, use Tantivy full-text search
-        if !self.query.value().trim().is_empty() {
-            let (snippets, ranked_ids) = search_tantivy(
-                &self.index_path,
-                self.query.value(),
-                self.filter_claude_home.as_deref(),
-                self.filter_codex_home.as_deref(),
-            );
-            if !snippets.is_empty() {
-                // Store snippets for rendering
-                self.search_snippets = snippets.clone();
-                // Filter to only sessions that match the Tantivy search
-                self.filtered.retain(|&i| {
-                    snippets.contains_key(&self.sessions[i].session_id)
-                });
-
-                if self.sort_by_time {
-                    // Sort by modified_ts (numeric epoch ms, reverse chronological)
-                    self.filtered.sort_by(|&a, &b| {
-                        self.sessions[b].modified_ts.cmp(&self.sessions[a].modified_ts)
-                    });
-                } else {
-                    // Reorder filtered by Tantivy ranking (phrase + recency boosted)
-                    // Build position map for ranking
-                    let rank_pos: HashMap<&str, usize> = ranked_ids
-                        .iter()
-                        .enumerate()
-                        .map(|(pos, id)| (id.as_str(), pos))
-                        .collect();
-
-                    // Sort filtered by position in ranked_ids (lower = higher rank)
-                    self.filtered.sort_by_key(|&i| {
-                        rank_pos
-                            .get(self.sessions[i].session_id.as_str())
-                            .copied()
-                            .unwrap_or(usize::MAX)
-                    });
-                }
-            } else {
-                // No Tantivy matches - clear results and snippets
-                self.search_snippets.clear();
-                self.filtered.clear();
-            }
-        } else {
-            // Clear snippets when no query - sort by time (most recent first)
-            self.search_snippets.clear();
-            self.filtered.sort_by(|&a, &b| {
-                self.sessions[b].modified_ts.cmp(&self.sessions[a].modified_ts)
-            });
+    fn build_filter_params(&self) -> FilterParams {
+        FilterParams {
+            query: self.query.value().to_string(),
+            scope_global: self.scope_global,
+            filter_dir: self.filter_dir.clone(),
+            include_original: self.include_original,
+            include_sub: self.include_sub,
+            include_trimmed: self.include_trimmed,
+            include_continued: self.include_continued,
+            filter_agent: self.filter_agent.clone(),
+            filter_min_lines: self.filter_min_lines,
+            filter_after_date: self.filter_after_date.clone(),
+            filter_before_date: self.filter_before_date.clone(),
+            filter_branch: self.filter_branch.clone(),
+            include_live_only: self.include_live_only,
+            live_session_ids: self.live_sessions.keys().cloned().collect(),
+            max_results: self.max_results,
+            sort_by_time: self.sort_by_time,
         }
+    }
 
-        // Apply max_results limit if specified
-        if let Some(limit) = self.max_results {
-            self.filtered.truncate(limit);
-        }
+    fn apply_filter_result(&mut self, result: FilterResult) {
+        self.filtered = result.filtered;
+        self.search_snippets = result.search_snippets;
+        self.cached_max_session_id_len = result.cached_max_session_id_len;
+        self.cached_max_project_len = result.cached_max_project_len;
+        self.cached_max_branch_len = result.cached_max_branch_len;
+        self.cached_max_lines_len = result.cached_max_lines_len;
 
-        // Filter to live sessions only if enabled
-        if self.include_live_only {
-            self.filtered.retain(|&idx| {
-                let s = &self.sessions[idx];
-                self.live_sessions.contains_key(s.clean_session_id())
-            });
-        }
-
+        // Match previous behavior: reset selection/scroll on new results.
         self.selected = 0;
         self.list_scroll = 0;
         self.preview_scroll = 0;
+        self.preview_session_id = None;
+        self.preview_content.clear();
+    }
 
-        // Cache column widths for rendering (avoid recalculating on every frame)
-        self.cached_max_session_id_len = 8;
-        self.cached_max_project_len = 10;
-        self.cached_max_branch_len = 8;
-        self.cached_max_lines_len = 4;
-        for &idx in &self.filtered {
-            let s = &self.sessions[idx];
-            self.cached_max_session_id_len = self.cached_max_session_id_len.max(s.session_id_display().len());
-            self.cached_max_project_len = self.cached_max_project_len.max(s.project_name().len());
-            self.cached_max_branch_len = self.cached_max_branch_len.max(s.branch_display().len());
-            self.cached_max_lines_len = self.cached_max_lines_len.max(format!("{}L", s.lines).len());
+    fn filter_sync(&mut self) {
+        let params = self.build_filter_params();
+        let result = compute_filter_result(
+            &self.sessions,
+            &self.index_path,
+            &self.launch_cwd,
+            self.filter_claude_home.as_deref(),
+            self.filter_codex_home.as_deref(),
+            &params,
+        );
+        self.apply_filter_result(result);
+    }
+
+    fn enable_background_filtering(&mut self) {
+        if self.filter_request_tx.is_some() {
+            return;
         }
-        // Apply reasonable limits
-        self.cached_max_session_id_len = self.cached_max_session_id_len.min(18);
-        self.cached_max_project_len = self.cached_max_project_len.min(40);
-        self.cached_max_branch_len = self.cached_max_branch_len.min(35);
+
+        let (req_tx, req_rx) = unbounded::<FilterRequest>();
+        let (res_tx, res_rx) = unbounded::<FilterResponse>();
+
+        let sessions = Arc::clone(&self.sessions);
+        let index_path = self.index_path.clone();
+        let launch_cwd = self.launch_cwd.clone();
+        let filter_claude_home = self.filter_claude_home.clone();
+        let filter_codex_home = self.filter_codex_home.clone();
+
+        thread::spawn(move || filter_worker_loop(
+            sessions,
+            index_path,
+            launch_cwd,
+            filter_claude_home,
+            filter_codex_home,
+            req_rx,
+            res_tx,
+        ));
+
+        self.filter_request_tx = Some(req_tx);
+        self.filter_result_rx = Some(res_rx);
+    }
+
+    fn request_filter(&mut self) {
+        if let Some(tx) = self.filter_request_tx.clone() {
+            self.filter_seq = self.filter_seq.saturating_add(1);
+            let seq = self.filter_seq;
+            self.latest_filter_request = seq;
+            if tx
+                .send(FilterRequest {
+                seq,
+                params: self.build_filter_params(),
+            })
+                .is_err()
+            {
+                // Background worker died/disconnected; fall back to synchronous filtering.
+                self.filter_request_tx = None;
+                self.filter_result_rx = None;
+                self.filter_sync();
+            }
+        } else {
+            self.filter_sync();
+        }
+    }
+
+    fn poll_filter_results(&mut self) {
+        let Some(ref rx) = self.filter_result_rx else {
+            return;
+        };
+
+        // Keep results stable during the debounce window while the user is typing.
+        if self.pending_filter {
+            return;
+        }
+
+        let mut latest: Option<FilterResponse> = None;
+        while let Ok(resp) = rx.try_recv() {
+            latest = Some(resp);
+        }
+
+        let Some(resp) = latest else {
+            return;
+        };
+
+        // Ignore stale results if a newer request was queued.
+        if resp.seq < self.latest_filter_request {
+            return;
+        }
+
+        self.apply_filter_result(resp.result);
+    }
+
+    // Deprecated: use filter_sync() or request_filter().
+    fn filter(&mut self) {
+        self.request_filter();
     }
 
     fn selected_session(&self) -> Option<&Session> {
@@ -2047,6 +2270,28 @@ fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) 
                 Span::styled(date_str, Style::default().fg(t.dim_fg)),
             ];
 
+            // CWD line: show full path, collapsing home to ~
+            let cwd_style = if is_selected {
+                Style::default().fg(t.selection_snippet_fg)
+            } else {
+                Style::default().fg(t.dim_fg)
+            };
+            let cwd_indent = " ".repeat(row_num_width + 1);
+            let cwd_display = if !s.cwd.is_empty() {
+                let home = std::env::var("HOME").unwrap_or_default();
+                if !home.is_empty() && s.cwd.starts_with(&home) {
+                    format!("~{}", &s.cwd[home.len()..])
+                } else {
+                    s.cwd.clone()
+                }
+            } else {
+                String::new()
+            };
+            let cwd_line = Line::from(vec![
+                Span::styled(cwd_indent.clone(), cwd_style),
+                Span::styled(cwd_display, cwd_style),
+            ]);
+
             // Snippet: show last_msg when no query, highlighted match when searching
             let snippet_style = if is_selected {
                 Style::default().fg(t.selection_snippet_fg)
@@ -2112,6 +2357,7 @@ fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) 
 
             let lines = vec![
                 Line::from(header_spans),
+                cwd_line,
                 snippet_line,
                 Line::from(""),
             ];
@@ -2126,8 +2372,8 @@ fn render_session_list(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) 
 
     let list = List::new(items);
 
-    // Calculate visible items (3 lines per item)
-    let lines_per_item = 3;
+    // Calculate visible items (4 lines per item: header, cwd, snippet, spacer)
+    let lines_per_item = 4;
     let visible_items = (area.height as usize) / lines_per_item;
 
     if app.selected < app.list_scroll {
@@ -4630,6 +4876,7 @@ fn main() -> Result<()> {
     }
 
     // Interactive TUI mode
+    app.enable_background_filtering();
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
@@ -4641,6 +4888,7 @@ fn main() -> Result<()> {
     const SEARCH_DEBOUNCE_MS: u128 = 200;
 
     loop {
+        app.poll_filter_results();
         terminal.draw(|f| render(f, &mut app))?;
 
         if app.should_quit {
@@ -4652,16 +4900,6 @@ fn main() -> Result<()> {
         if now.duration_since(app.last_process_scan).as_millis() >= PROCESS_REFRESH_INTERVAL_MS {
             app.live_sessions = scan_running_sessions();
             app.last_process_scan = now;
-        }
-
-        // Debounced search: run filter() after 200ms of no typing
-        if app.pending_filter {
-            if let Some(last_change) = app.last_query_change {
-                if Instant::now().duration_since(last_change).as_millis() >= SEARCH_DEBOUNCE_MS {
-                    app.filter();
-                    app.pending_filter = false;
-                }
-            }
         }
 
         // Drain all pending events (non-blocking)
@@ -5409,6 +5647,17 @@ fn main() -> Result<()> {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Debounced search: run filter() after SEARCH_DEBOUNCE_MS of no typing.
+        // Do this *after* draining input events so new keystrokes always extend the debounce window.
+        if app.pending_filter {
+            if let Some(last_change) = app.last_query_change {
+                if Instant::now().duration_since(last_change).as_millis() >= SEARCH_DEBOUNCE_MS {
+                    app.filter();
+                    app.pending_filter = false;
                 }
             }
         }
