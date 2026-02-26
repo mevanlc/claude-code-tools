@@ -29,6 +29,7 @@ dependencies = [
  "crossterm",
  "dirs",
  "ratatui",
+ "regex",
  "serde",
  "serde_json",
  "strip-ansi-escapes",
