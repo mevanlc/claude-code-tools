@@ -27,6 +27,7 @@ use ratatui::{
     widgets::{List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
+use log::Level;
 use regex::{Regex, RegexBuilder};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -5409,6 +5410,7 @@ fn parse_cli_args() -> CliOptions {
 // ============================================================================
 
 fn main() -> Result<()> {
+    init_logging();
     let cli = parse_cli_args();
 
     let index_path = dirs::home_dir()
@@ -5575,6 +5577,7 @@ fn main() -> Result<()> {
 
             if let Event::Key(key) = ev {
                 if key.kind == KeyEventKind::Press {
+                    log_key_event(&key);
                     // Clear status message on any keypress
                     app.status_message = None;
 
@@ -6499,6 +6502,107 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn init_logging() {
+    // De-facto standard Rust logging: `log` facade + `env_logger` backend.
+    //
+    // Supported configuration:
+    // - Conventional:
+    //   - `RUST_LOG=cct_kbe=debug`
+    //   - `CCT_KBE_LOG_FILE=/tmp/cctools-keyboard-event.log`
+    //
+    // - Convenience (single env var) for keyboard-event debugging:
+    //   - `RUST_LOG=cct_kbe:level=debug,file=/tmp/cctools-keyboard-event.log`
+    //
+    // We log key events with target "cct_kbe" so you can enable/disable this independently.
+    let mut file_path: Option<String> = std::env::var("CCT_KBE_LOG_FILE").ok();
+
+    let mut builder = if let Ok(spec) = std::env::var("RUST_LOG") {
+        // Try to parse our convenience format first so we don't hand an invalid string to env_logger.
+        // Format: "<target>:level=<lvl>,file=<path>"
+        if let Some((target, rest)) = spec.split_once(':') {
+            if rest.contains("file=") || rest.contains("level=") {
+                let mut level: Option<String> = None;
+                for part in rest.split(',') {
+                    let Some((k, v)) = part.split_once('=') else {
+                        continue;
+                    };
+                    match k.trim() {
+                        "level" => level = Some(v.trim().to_string()),
+                        "file" => file_path = Some(v.trim().to_string()),
+                        _ => {}
+                    }
+                }
+                let mut b = env_logger::Builder::new();
+                if let Some(level) = level {
+                    b.parse_filters(&format!("{}={}", target.trim(), level));
+                } else {
+                    b.parse_filters(&format!("{}=debug", target.trim()));
+                }
+                b
+            } else {
+                env_logger::Builder::from_env(env_logger::Env::default().filter_or("RUST_LOG", "error"))
+            }
+        } else {
+            env_logger::Builder::from_env(env_logger::Env::default().filter_or("RUST_LOG", "error"))
+        }
+    } else {
+        env_logger::Builder::from_env(env_logger::Env::default().filter_or("RUST_LOG", "error"))
+    };
+
+    builder.format(|buf, record| {
+        use std::io::Write;
+        writeln!(
+            buf,
+            "{} {:<5} {}: {}",
+            buf.timestamp_millis(),
+            record.level(),
+            record.target(),
+            record.args()
+        )
+    });
+
+    if let Some(path) = file_path {
+        if let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            builder.target(env_logger::Target::Pipe(Box::new(std::io::BufWriter::new(file))));
+        }
+    }
+
+    let _ = builder.try_init();
+}
+
+fn log_key_event(key: &crossterm::event::KeyEvent) {
+    if !log::log_enabled!(target: "cct_kbe", Level::Debug) {
+        return;
+    }
+
+    match key.code {
+        KeyCode::Char(c) => {
+            log::debug!(
+                target: "cct_kbe",
+                "key code=Char({c:?} U+{cp:04X}) modifiers={mods:?} kind={kind:?} state={state:?}",
+                cp = c as u32,
+                mods = key.modifiers,
+                kind = key.kind,
+                state = key.state
+            );
+        }
+        _ => {
+            log::debug!(
+                target: "cct_kbe",
+                "key code={code:?} modifiers={mods:?} kind={kind:?} state={state:?}",
+                code = key.code,
+                mods = key.modifiers,
+                kind = key.kind,
+                state = key.state
+            );
+        }
+    }
 }
 
 // ============================================================================
