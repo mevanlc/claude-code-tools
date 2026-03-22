@@ -27,6 +27,7 @@ use ratatui::{
     widgets::{List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
+use log::Level;
 use regex::{Regex, RegexBuilder};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -608,14 +609,15 @@ struct App {
     sessions: Arc<Vec<Session>>,
     filtered: Vec<usize>, // Indices into sessions
     query: Input,         // tui-input widget with readline support
-    selected: usize,
-    list_scroll: usize,
-    preview_scroll: usize,
-    preview_width_pct: u16,
-    should_quit: bool,
-    should_select: Option<Session>,
-    #[allow(dead_code)] // unused - keeping for upstream compatibility
-    total_sessions: usize,
+	selected: usize,
+	list_scroll: usize,
+	preview_scroll: usize,
+	preview_width_pct: u16,
+	preview_wrap: bool,
+	should_quit: bool,
+	should_select: Option<Session>,
+	#[allow(dead_code)] // unused - keeping for upstream compatibility
+	total_sessions: usize,
     scope_global: bool,
     launch_cwd: String,
     index_path: String, // Path to Tantivy index for keyword search
@@ -960,14 +962,15 @@ impl App {
             sessions,
             filtered: Vec::new(),
             query: Input::default(),
-            selected: 0,
-            list_scroll: 0,
-            preview_scroll: 0,
-            preview_width_pct: 30,
-            should_quit: false,
-            should_select: None,
-            total_sessions: total,
-            scope_global: false,
+			selected: 0,
+			list_scroll: 0,
+			preview_scroll: 0,
+			preview_width_pct: 30,
+			preview_wrap: false,
+			should_quit: false,
+			should_select: None,
+			total_sessions: total,
+			scope_global: false,
             launch_cwd,
             index_path,
             search_snippets: HashMap::new(),
@@ -1091,14 +1094,15 @@ impl App {
             sessions,
             filtered: Vec::new(),
             query: Input::from(cli.query.clone().unwrap_or_default()),
-            selected: 0,
-            list_scroll: 0,
-            preview_scroll: 0,
-            preview_width_pct: 30,
-            should_quit: false,
-            should_select: None,
-            total_sessions: total,
-            // --dir overrides -g: if filter_dir is set, scope_global is effectively false
+			selected: 0,
+			list_scroll: 0,
+			preview_scroll: 0,
+			preview_width_pct: 30,
+			preview_wrap: false,
+			should_quit: false,
+			should_select: None,
+			total_sessions: total,
+			// --dir overrides -g: if filter_dir is set, scope_global is effectively false
             scope_global: if cli.filter_dir.is_some() {
                 false
             } else {
@@ -2804,11 +2808,11 @@ fn render_preview(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
         }
     };
 
-    // Build conversation lines
-    let content_lines: Vec<Line> = app
-        .preview_content
-        .lines()
-        .map(|line| {
+	// Build conversation lines
+	let content_lines: Vec<Line> = app
+		.preview_content
+		.lines()
+		.map(|line| {
             if line.starts_with("> ") {
                 // User message
                 let msg_content: String = line.chars().skip(2).collect();
@@ -2866,18 +2870,32 @@ fn render_preview(frame: &mut Frame, app: &mut App, t: &Theme, area: Rect) {
                 Line::from("")
             }
         })
-        .collect();
+		.collect();
 
-    // Clamp scroll
-    let visible_height = area.height as usize;
-    let max_scroll = content_lines
-        .len()
-        .saturating_sub(visible_height.min(content_lines.len()));
-    app.preview_scroll = app.preview_scroll.min(max_scroll);
+	// Clamp scroll. For wrapped mode, approximate visual line count so you can scroll through
+	// wrapped segments (Paragraph scroll is applied after wrapping).
+	let visible_height = area.height as usize;
+	let wrap_width = area.width.max(1) as usize;
+	let total_visual_lines = if app.preview_wrap {
+		content_lines
+			.iter()
+			.map(|l| {
+				let w = l.width().max(1) as usize;
+				(w + wrap_width - 1) / wrap_width
+			})
+			.sum::<usize>()
+	} else {
+		content_lines.len()
+	};
+	let max_scroll = total_visual_lines.saturating_sub(visible_height);
+	app.preview_scroll = app.preview_scroll.min(max_scroll);
 
-    let visible_lines: Vec<Line> = content_lines.into_iter().skip(app.preview_scroll).collect();
-    let paragraph = Paragraph::new(visible_lines);
-    frame.render_widget(paragraph, area);
+	let scroll_y = (app.preview_scroll.min(u16::MAX as usize)) as u16;
+	let mut paragraph = Paragraph::new(content_lines).scroll((scroll_y, 0));
+	if app.preview_wrap {
+		paragraph = paragraph.wrap(ratatui::widgets::Wrap { trim: false });
+	}
+	frame.render_widget(paragraph, area);
 }
 
 fn render_status_bar(frame: &mut Frame, app: &App, t: &Theme, area: Rect, show_legend: bool) {
@@ -5392,6 +5410,7 @@ fn parse_cli_args() -> CliOptions {
 // ============================================================================
 
 fn main() -> Result<()> {
+    init_logging();
     let cli = parse_cli_args();
 
     let index_path = dirs::home_dir()
@@ -5558,6 +5577,7 @@ fn main() -> Result<()> {
 
             if let Event::Key(key) = ev {
                 if key.kind == KeyEventKind::Press {
+                    log_key_event(&key);
                     // Clear status message on any keypress
                     app.status_message = None;
 
@@ -6321,18 +6341,29 @@ fn main() -> Result<()> {
                         }
                     } else {
                         // Normal mode
-                        match key.code {
-                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                app.should_quit = true;
-                            }
-                            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                app.enter_full_view_for_selected();
-                            }
-                            KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                app.scroll_preview_down(1);
-                            }
-                            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                                app.scroll_preview_up(1);
+	                        match key.code {
+	                            KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+	                                app.should_quit = true;
+	                            }
+	                            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+	                                app.enter_full_view_for_selected();
+	                            }
+	                            KeyCode::Char('o' | 'O')
+	                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+	                            {
+	                                app.preview_wrap = !app.preview_wrap;
+	                                app.preview_scroll = 0;
+	                            }
+	                            KeyCode::Char('\u{0f}') => {
+	                                // Some terminals report Ctrl+O as a raw control character (SI)
+	                                app.preview_wrap = !app.preview_wrap;
+	                                app.preview_scroll = 0;
+	                            }
+	                            KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+	                                app.scroll_preview_down(1);
+	                            }
+	                            KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+	                                app.scroll_preview_up(1);
                             }
                             KeyCode::PageUp if key.modifiers.contains(KeyModifiers::CONTROL) => {
                                 let lines = app
@@ -6471,6 +6502,107 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn init_logging() {
+    // De-facto standard Rust logging: `log` facade + `env_logger` backend.
+    //
+    // Supported configuration:
+    // - Conventional:
+    //   - `RUST_LOG=cct_kbe=debug`
+    //   - `CCT_KBE_LOG_FILE=/tmp/cctools-keyboard-event.log`
+    //
+    // - Convenience (single env var) for keyboard-event debugging:
+    //   - `RUST_LOG=cct_kbe:level=debug,file=/tmp/cctools-keyboard-event.log`
+    //
+    // We log key events with target "cct_kbe" so you can enable/disable this independently.
+    let mut file_path: Option<String> = std::env::var("CCT_KBE_LOG_FILE").ok();
+
+    let mut builder = if let Ok(spec) = std::env::var("RUST_LOG") {
+        // Try to parse our convenience format first so we don't hand an invalid string to env_logger.
+        // Format: "<target>:level=<lvl>,file=<path>"
+        if let Some((target, rest)) = spec.split_once(':') {
+            if rest.contains("file=") || rest.contains("level=") {
+                let mut level: Option<String> = None;
+                for part in rest.split(',') {
+                    let Some((k, v)) = part.split_once('=') else {
+                        continue;
+                    };
+                    match k.trim() {
+                        "level" => level = Some(v.trim().to_string()),
+                        "file" => file_path = Some(v.trim().to_string()),
+                        _ => {}
+                    }
+                }
+                let mut b = env_logger::Builder::new();
+                if let Some(level) = level {
+                    b.parse_filters(&format!("{}={}", target.trim(), level));
+                } else {
+                    b.parse_filters(&format!("{}=debug", target.trim()));
+                }
+                b
+            } else {
+                env_logger::Builder::from_env(env_logger::Env::default().filter_or("RUST_LOG", "error"))
+            }
+        } else {
+            env_logger::Builder::from_env(env_logger::Env::default().filter_or("RUST_LOG", "error"))
+        }
+    } else {
+        env_logger::Builder::from_env(env_logger::Env::default().filter_or("RUST_LOG", "error"))
+    };
+
+    builder.format(|buf, record| {
+        use std::io::Write;
+        writeln!(
+            buf,
+            "{} {:<5} {}: {}",
+            buf.timestamp_millis(),
+            record.level(),
+            record.target(),
+            record.args()
+        )
+    });
+
+    if let Some(path) = file_path {
+        if let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            builder.target(env_logger::Target::Pipe(Box::new(std::io::BufWriter::new(file))));
+        }
+    }
+
+    let _ = builder.try_init();
+}
+
+fn log_key_event(key: &crossterm::event::KeyEvent) {
+    if !log::log_enabled!(target: "cct_kbe", Level::Debug) {
+        return;
+    }
+
+    match key.code {
+        KeyCode::Char(c) => {
+            log::debug!(
+                target: "cct_kbe",
+                "key code=Char({c:?} U+{cp:04X}) modifiers={mods:?} kind={kind:?} state={state:?}",
+                cp = c as u32,
+                mods = key.modifiers,
+                kind = key.kind,
+                state = key.state
+            );
+        }
+        _ => {
+            log::debug!(
+                target: "cct_kbe",
+                "key code={code:?} modifiers={mods:?} kind={kind:?} state={state:?}",
+                code = key.code,
+                mods = key.modifiers,
+                kind = key.kind,
+                state = key.state
+            );
+        }
+    }
 }
 
 // ============================================================================
